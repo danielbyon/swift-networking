@@ -1,0 +1,24 @@
+AGENTS.md
+  h_a1fa5c19d60fed 1-19
+CONTEXT.md
+  h_a1fa5c19d60fed 1-143
+docs/agents/domain.md
+  h_a1fa5c19d60fed 1-25
+docs/agents/issue-tracker.md
+  h_a1fa5c19d60fed 1-37
+docs/agents/triage-labels.md
+  h_a1fa5c19d60fed 1-13
+docs/spec/networking-1.0.md
+  h_a1fa5c19d60fed 1-2685
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "848bd4de0df5b85c8e3047b6197393c87a834bb9",
+  "prompts": {},
+  "humans": {
+    "h_a1fa5c19d60fed": {
+      "author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
