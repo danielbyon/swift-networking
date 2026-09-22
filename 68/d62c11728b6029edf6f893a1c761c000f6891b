@@ -1,0 +1,51 @@
+.githooks/pre-commit
+  s_752e49036bbd5b::t_493de381ec9035 1-7
+.swiftlint.yml
+  s_752e49036bbd5b::t_2031a833e13dc1 1-13
+Tests/NetworkingTests/NetworkingTests.swift
+  s_752e49036bbd5b::t_875434a7f5e11c 1-7
+  s_752e49036bbd5b::t_fd59442ed40dad 8-12
+.swiftformat
+  s_752e49036bbd5b::t_2031a833e13dc1 1-5
+Package.resolved
+  s_752e49036bbd5b::t_4a7c904fc638d1 1-15
+Makefile
+  s_752e49036bbd5b::t_493de381ec9035 1-46
+Sources/NetworkingTestSupport/NetworkingTestSupport.swift
+  s_752e49036bbd5b::t_875434a7f5e11c 2-6
+  s_752e49036bbd5b::t_004836c587f80e 1,7-11
+Scripts/swift-tools.sh
+  s_752e49036bbd5b::t_1fd71d377a98f2 1-270
+Package.swift
+  s_752e49036bbd5b::t_fd59442ed40dad 1-48
+.gitignore
+  s_752e49036bbd5b::t_1fd71d377a98f2 65
+Sources/Networking/Networking.swift
+  s_752e49036bbd5b::t_875434a7f5e11c 2-6
+  s_752e49036bbd5b::t_004836c587f80e 1,7-9
+Tests/NetworkingTestSupportTests/NetworkingTestSupportTests.swift
+  s_752e49036bbd5b::t_875434a7f5e11c 1-7
+  s_752e49036bbd5b::t_fd59442ed40dad 8-12
+Scripts/swift-tools-local.sh
+  s_752e49036bbd5b::t_1fd71d377a98f2 1-10
+.github/workflows/ci.yml
+  s_752e49036bbd5b::t_493de381ec9035 1-43
+Scripts/swift-tools.lock
+  s_752e49036bbd5b::t_e4d3bc65928130 1-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "68d62c11728b6029edf6f893a1c761c000f6891b",
+  "prompts": {},
+  "sessions": {
+    "s_752e49036bbd5b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c9d0-6e40-7430-b312-8569c22fc7d3",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
