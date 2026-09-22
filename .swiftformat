@@ -1,0 +1,5 @@
+# Repository-specific SwiftFormat overlay for swift-networking.
+# The shared swift-tooling baseline supplies the common formatting policy.
+
+--swift-version 6.4
+--header "\n {file}\n swift-networking\n\n SPDX-License-Identifier: MIT\n"

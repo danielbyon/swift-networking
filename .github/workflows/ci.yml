@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Quality gate
+    runs-on: xcode-27
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Run package quality gate
+        run: make all
+
+  platform-build:
+    name: Build ${{ matrix.platform }}
+    runs-on: xcode-27
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - iOS
+          - macOS
+          - tvOS
+          - watchOS
+          - visionOS
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Compile package for ${{ matrix.platform }}
+        run: make platform-build PLATFORM="${{ matrix.platform }}" DERIVED_DATA_PATH="$RUNNER_TEMP/swift-networking-${{ matrix.platform }}"

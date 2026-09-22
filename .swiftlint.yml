@@ -1,0 +1,13 @@
+# Repository-specific SwiftLint overlay for swift-networking.
+# The shared swift-tooling baseline supplies the common lint policy.
+
+included:
+  - Sources
+  - Tests
+
+excluded:
+  - .build
+  - "**/.build/**"
+  - "**/.swiftpm/**"
+  - "**/Generated/**"
+  - "**/*.generated.swift"
