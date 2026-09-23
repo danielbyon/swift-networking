@@ -1,0 +1,42 @@
+Sources/Networking/NetworkClient.swift
+  s_e4a28b26353919::t_20aed813e1c225 39-60,63-65,68-73,77-78,88,97,104-118,121,133,136-137,159-191,193-199,202-225,227-259,261-272,274-275
+  s_e4a28b26353919::t_1bfa8a54f4ff02 200,226,260,273
+  s_e4a28b26353919::t_31fbe3e081cd08 192,201
+Tests/NetworkingTestSupportTests/NetworkingTestSupportTests.swift
+  s_e4a28b26353919::t_733cae54aae5b3 19,38,59,80,102
+Sources/Networking/Endpoint.swift
+  s_e4a28b26353919::t_20aed813e1c225 28-33,37-38,42,44,47-51,55-56,74-99,109
+Tests/NetworkingTests/RoutingTests.swift
+  s_e4a28b26353919::t_e833f65a5a68b0 234
+  s_e4a28b26353919::t_6ab736c3120812 15-94,97-125,128-150,152-165,167,169-170,172-173,175,182,188,190-223,225,253-263,285,288-317,319-321,323-324
+  s_e4a28b26353919::t_e2594fc8cbb790 231,236
+  s_e4a28b26353919::t_d0839089e604ee 10,95-96,126-127,151,166,168,171,174,176-181,183-187,189,224,318,322,341-348
+  s_e4a28b26353919::t_1c5f9cf6fc29c5 1-9,11-13,327-334,367-368
+  s_e4a28b26353919::t_3f123b7b33adfd 14
+  s_e4a28b26353919::t_125081ddac1594 286-287,325-326,337-340
+  s_e4a28b26353919::t_fe9934fbd4f1ee 335-336
+  s_e4a28b26353919::t_6efacfa7d4d79d 349-366
+  s_e4a28b26353919::t_75bd15c382e0de 226-230,232-233,235,237-252,264-284
+Sources/Networking/Request.swift
+  s_e4a28b26353919::t_20aed813e1c225 14,24,33
+Sources/Networking/RequestConstructionError.swift
+  s_e4a28b26353919::t_20aed813e1c225 1-35
+Tests/NetworkingTests/RequestIDAndNetworkTaskTests.swift
+  s_e4a28b26353919::t_733cae54aae5b3 54,79,100,132,165,202,242,271,304
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0bb97eb83542bdf8b37ab5b84ab98672ff9f6310",
+  "prompts": {},
+  "sessions": {
+    "s_e4a28b26353919": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ce43-3d1d-7932-a0b2-0b740f8202bd",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
