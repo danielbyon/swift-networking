@@ -1,0 +1,29 @@
+.serena/memories/conventions.md
+  s_bf1cef5a31f7ee::t_eeef633e5129b2 1-11
+.serena/memories/core.md
+  s_bf1cef5a31f7ee::t_7bc430d347cbac 1-9
+.serena/memories/memory_maintenance.md
+  s_bf1cef5a31f7ee::t_5fa75400ac8bea 1-33
+.serena/memories/suggested_commands.md
+  s_bf1cef5a31f7ee::t_b23e66f06202f6 1-9
+.serena/memories/task_completion.md
+  s_bf1cef5a31f7ee::t_07bc12b8715359 1-7
+.serena/memories/tech_stack.md
+  s_bf1cef5a31f7ee::t_ca9aa248c55ad6 1-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "35adc95936446a5253cbd2ac0e0420c4316cbb5e",
+  "prompts": {},
+  "sessions": {
+    "s_bf1cef5a31f7ee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c9d0-ac2d-7620-9299-089d16e94d71",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
