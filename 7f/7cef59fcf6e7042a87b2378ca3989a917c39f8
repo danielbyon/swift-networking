@@ -1,0 +1,49 @@
+Package.swift
+  s_8a5efe98cc0448::t_262c6ae52d285f 20,41
+  s_8a5efe98cc0448::t_f45d173164b000 43
+Sources/Networking/NetworkClient.swift
+  s_8a5efe98cc0448::t_c394f5d1dc9ece 39-61,63,67-74,77,79-87,89-91,93-95,105-114
+  s_8a5efe98cc0448::t_242afb8d9fcc10 88,92
+Sources/Networking/Response.swift
+  s_8a5efe98cc0448::t_c394f5d1dc9ece 18-21,24
+Sources/Networking/NetworkTask.swift
+  s_8a5efe98cc0448::t_07fbda575fff9e 114
+  s_8a5efe98cc0448::t_aa641664bd2d75 1-24,29-58,63-76,81-109,113,116,118-146
+  s_8a5efe98cc0448::t_242afb8d9fcc10 110-111,115,117
+  s_8a5efe98cc0448::t_93e84903881c55 59-62,77-80,112
+  s_8a5efe98cc0448::t_65419c7062c377 25-28
+Sources/Networking/RequestID.swift
+  s_8a5efe98cc0448::t_7df1381453ba01 1-36,38-41
+  s_8a5efe98cc0448::t_65419c7062c377 37
+Package.resolved
+  s_8a5efe98cc0448::t_d13e22f59352ca 2,4-12,21-47
+Tests/NetworkingTests/__Snapshots__/RequestIDAndNetworkTaskTests/requestIDCodableJSONSnapshotAndRoundTrips.1.json
+  s_8a5efe98cc0448::t_e77b9f1627bfb8 1-3
+Tests/NetworkingTests/RequestIDAndNetworkTaskTests.swift
+  s_8a5efe98cc0448::t_075fa16b346d49 317,387
+  s_8a5efe98cc0448::t_2159c927ceb1c1 1-14,16-18,21-37,44-52,54-59,61-77,79-84,86-133,135-169,171-203,205-243,245-304,306-313,315,319-335,340-351,353-357,362-366,370,374-384,389-390,395-436,444-450,452,454-457
+  s_8a5efe98cc0448::t_ed8c1dfcd380c9 15
+  s_8a5efe98cc0448::t_849d74094270c2 305,385
+  s_8a5efe98cc0448::t_242afb8d9fcc10 316,318,386,388
+  s_8a5efe98cc0448::t_ee1ba1a2f01376 440
+  s_8a5efe98cc0448::t_93e84903881c55 19-20,60,85,134,170,204,244,314,336-339,352,358-361,367-369,371-373,391-394,451,453
+  s_8a5efe98cc0448::t_4d76e2cbe81962 53,78
+  s_8a5efe98cc0448::t_6fad60bf2145ba 38-43
+  s_8a5efe98cc0448::t_0b8eeca50f7ffc 437-439,441-443
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7f7cef59fcf6e7042a87b2378ca3989a917c39f8",
+  "prompts": {},
+  "sessions": {
+    "s_8a5efe98cc0448": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0cd64-7aab-7863-b8c0-2fdcd4922382",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
