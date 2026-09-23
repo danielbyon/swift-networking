@@ -382,6 +382,15 @@ Conceptual factories:
 
 An endpoint chooses one endpoint-level query construction mechanism rather than combining several independent query builders.
 
+Input-bearing `.items` and `.codable` factories accept their builder or selector directly, without a
+witness value. `Request` captures an input-bearing builder or selector once when it binds endpoint
+input. The fixed no-input forms are `QueryEncoding<Never>.items(_:)` and
+`QueryEncoding<Never>.codable(_:, configuration:)`.
+
+Swift permits a closure-based `QueryEncoding<Never>` to be constructed, including through generic
+code. A no-input Request treats that query as absent and never invokes its closure. The query
+contract is safe non-execution for `Never`, not static prevention of every closure-based value.
+
 ### 8.2 URLQueryEncoder
 
 The library provides:

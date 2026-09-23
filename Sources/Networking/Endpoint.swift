@@ -8,19 +8,22 @@
 import Foundation
 import HTTPTypes
 
-/// A reusable HTTP contract that defines an operation's method, route, and response decoding.
+/// A reusable HTTP contract that defines an operation's method, route, query, and response decoding.
 public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Sendable {
     package let method: HTTPRequest.Method
     package let route: EndpointRoute<Input>
+    package let query: QueryEncoding<Input>
     package let response: ResponseDecoding<Output>
 
     private init(
         method: HTTPRequest.Method,
         route: EndpointRoute<Input>,
+        query: QueryEncoding<Input>,
         response: ResponseDecoding<Output>,
     ) {
         self.method = method
         self.route = route
+        self.query = query
         self.response = response
     }
 }
@@ -117,12 +120,14 @@ extension Endpoint where Body == Never {
     ///   - method: The explicit HTTP method for every invocation.
     ///   - route: The endpoint-owned route.
     ///   - response: The response decoding strategy.
+    ///   - query: The endpoint-owned query mechanism, defaulting to no endpoint query values.
     /// - Returns: An immutable data endpoint.
     public static func data(
         method: HTTPRequest.Method,
         route: EndpointRoute<Input>,
         response: ResponseDecoding<Output>,
+        query: QueryEncoding<Input> = .none,
     ) -> Self {
-        Self(method: method, route: route, response: response)
+        Self(method: method, route: route, query: query, response: response)
     }
 }

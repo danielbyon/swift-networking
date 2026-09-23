@@ -1,0 +1,4 @@
+[
+  "https:\/\/example.com\/items\/42?enabled=1&tags%5B%5D=42&tags%5B%5D=second&request=value",
+  "https:\/\/example.com\/items\/42?enabled=1&tags%5B%5D=42&tags%5B%5D=second&request=value"
+]

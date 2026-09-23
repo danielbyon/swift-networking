@@ -1,0 +1,4 @@
+[
+  "https:\/\/example.com\/items?fixed=item&repeat=one&repeat=two&request=item",
+  "https:\/\/example.com\/codable?enabled=1&value=fixed&manual=one"
+]
