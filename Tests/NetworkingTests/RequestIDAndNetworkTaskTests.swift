@@ -51,7 +51,7 @@ struct RequestIDAndNetworkTaskTests {
             ),
             gated: false,
         )
-        let client = NetworkClient(
+        let client = try NetworkClient(
             transport: transport,
             configuration: .init().withRequestIDGenerator(generator),
         )
@@ -76,7 +76,7 @@ struct RequestIDAndNetworkTaskTests {
             ),
             gated: false,
         )
-        let client = NetworkClient(
+        let client = try NetworkClient(
             transport: transport,
             configuration: .init().withRequestIDGenerator(FixedRequestIDGenerator(requestID: requestID)),
         )
@@ -97,7 +97,7 @@ struct RequestIDAndNetworkTaskTests {
             ),
         )
         let decodeCount = Mutex(0)
-        let client = NetworkClient(transport: transport, configuration: .init())
+        let client = try NetworkClient(transport: transport, configuration: .init())
         let request = try makeRequest(
             response: ResponseDecoding { data, _ in
                 decodeCount.withLock { $0 += 1 }
@@ -129,7 +129,7 @@ struct RequestIDAndNetworkTaskTests {
     @Test("shared task stores one failure for late awaiters")
     func sharedTaskStoresFailureForLateAwaiters() async throws {
         let transport = ControlledNetworkTransport(outcome: .failure(.expectedFailure), gated: false)
-        let client = NetworkClient(transport: transport, configuration: .init())
+        let client = try NetworkClient(transport: transport, configuration: .init())
         let task = try client.task(for: makeRequest())
 
         do {
@@ -162,7 +162,7 @@ struct RequestIDAndNetworkTaskTests {
                 HTTPResponse(status: .init(code: 200)),
             ),
         )
-        let client = NetworkClient(
+        let client = try NetworkClient(
             transport: transport,
             configuration: .init().withRequestIDGenerator(FixedRequestIDGenerator(requestID: requestID)),
         )
@@ -199,7 +199,7 @@ struct RequestIDAndNetworkTaskTests {
                 HTTPResponse(status: .init(code: 200)),
             ),
         )
-        let client = NetworkClient(transport: transport, configuration: .init())
+        let client = try NetworkClient(transport: transport, configuration: .init())
         let task = try client.task(for: makeRequest())
         await transport.waitForStart()
 
@@ -239,7 +239,7 @@ struct RequestIDAndNetworkTaskTests {
                 HTTPResponse(status: .init(code: 200)),
             ),
         )
-        let client = NetworkClient(transport: transport, configuration: .init())
+        let client = try NetworkClient(transport: transport, configuration: .init())
         let sendTask = Task { try await client.send(makeRequest()) }
         await transport.waitForStart()
 
@@ -268,7 +268,7 @@ struct RequestIDAndNetworkTaskTests {
             ),
             gated: false,
         )
-        let client = NetworkClient(transport: transport, configuration: .init())
+        let client = try NetworkClient(transport: transport, configuration: .init())
         let gate = CancellationGate()
         let sendTask = Task {
             await gate.wait()
@@ -301,7 +301,7 @@ struct RequestIDAndNetworkTaskTests {
             ),
             gated: false,
         )
-        let client = NetworkClient(
+        let client = try NetworkClient(
             transport: transport,
             configuration: .init().withRequestIDGenerator(generator),
         )
