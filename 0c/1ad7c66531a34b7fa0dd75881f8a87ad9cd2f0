@@ -1,0 +1,107 @@
+Tests/NetworkingTests/URLQueryEncoderTests.swift
+  s_841bdadb36d27c::t_f6e50453ee1c37 13
+  s_841bdadb36d27c::t_6313f16503ea03 11,34,52,163-169,171
+  s_841bdadb36d27c::t_a229d5af720af7 53-59,61-65,135-138
+  s_841bdadb36d27c::t_6acfe3e0918165 16,31,51,88,102
+  s_841bdadb36d27c::t_d3ee813b1af225 60
+  s_841bdadb36d27c::t_bf20145da7fb7c 15,30,50,66,101
+  s_841bdadb36d27c::t_bafe552aa08414 100,103-120,156-159
+  s_841bdadb36d27c::t_78510a42efd1c6 67-87,139-147
+  s_841bdadb36d27c::t_862c4b74959235 1-10,12,14,17-29,32-33,35-49,89-99,121-134,148-155,160-162,170,172
+Tests/NetworkingTests/QueryCompositionTests.swift
+  s_841bdadb36d27c::t_609bc93102dde8 54-55,82-83,123-124,159-160
+  s_841bdadb36d27c::t_eae4ebe516ec26 266-269
+  s_841bdadb36d27c::t_8f8f2d037cecd7 30,32,37-41,43
+  s_841bdadb36d27c::t_a229d5af720af7 20,35,50,52-53,134,137-142,152-155,157,161-162,201-204,207-213,216-218,220,223-226,230-231
+  s_841bdadb36d27c::t_ab019b6e0f4799 97,121
+  s_841bdadb36d27c::t_056a2e6745b67b 175,184,277,279,285,287
+  s_841bdadb36d27c::t_f6e50453ee1c37 15,133,143
+  s_841bdadb36d27c::t_711ac7f33af40a 1-12,14,16,19,22-23,25-29,31,42,44-49,51,56-57,60,62-68,71-81,84-85,88,90,92-93,95-96,98-101,103-120,122,125-126,129-130,144,147-151,156,158,232-233,236,238-242,244-245,247,249-265,270-272,288-331
+  s_841bdadb36d27c::t_25828829354952 169-170,173,182
+  s_841bdadb36d27c::t_bf20145da7fb7c 17,58,86,89,127,163,215,234,237
+  s_841bdadb36d27c::t_6313f16503ea03 13
+  s_841bdadb36d27c::t_4d0f0c2ab26b6f 219,221-222,227-229
+  s_841bdadb36d27c::t_6acfe3e0918165 18,59,87,128,200,235
+  s_841bdadb36d27c::t_4ba029a21880e1 246
+  s_841bdadb36d27c::t_7d3f6ea8ef1fb9 36
+  s_841bdadb36d27c::t_408d88bf334383 34,164-168,171-172,174,176-181,183,185-199,273-276,278,280-284,286
+  s_841bdadb36d27c::t_98fdb8d4472a6d 21,24,61,69,91,94,131-132,135,145,205-206,214,243
+  s_841bdadb36d27c::t_14fe4b44e2a43b 33,70,102,136,146,248
+docs/spec/networking-1.0.md
+  s_841bdadb36d27c::t_fdc0241f66ce5d 385-393
+Tests/NetworkingTests/__Snapshots__/QueryCompositionTests/neverInputClosuresAreIgnored.1.json
+  s_841bdadb36d27c::t_87ad9761fc48f2 1-4
+Sources/Networking/QueryComposer.swift
+  s_841bdadb36d27c::t_27157c3b5e0f3b 25-32,53-59,72,107-113,136
+  s_841bdadb36d27c::t_4ba029a21880e1 73
+  s_841bdadb36d27c::t_99d9fa036ca408 65-66,92,94-95
+  s_841bdadb36d27c::t_6313f16503ea03 77,117
+  s_841bdadb36d27c::t_396ec52f6ef50c 62-63,85,93
+  s_841bdadb36d27c::t_bfe17c48cec827 1-24,33-52,60-61,64,67-71,74-76,78-84,86-91,96-106,114-116,118-135,137-140
+Tests/NetworkingTests/__Snapshots__/QueryCompositionTests/noInputQueryValuesAreFixed.1.json
+  s_841bdadb36d27c::t_c212eae03faf53 1-4
+docs/adr/0002-harmless-never-query-closures.md
+  s_841bdadb36d27c::t_45ca23f8c40d80 1-33
+Tests/NetworkingTests/__Snapshots__/QueryCompositionTests/relativeQueryLayersUsePrecedence.1.json
+  s_841bdadb36d27c::t_c212eae03faf53 1-4
+Sources/Networking/Request.swift
+  s_841bdadb36d27c::t_e2ecfbb1ef8b6a 15-16,59-68
+  s_841bdadb36d27c::t_1ff4f50f598878 19-32,39-45,52-58,69-75
+Sources/Networking/QueryEncoding.swift
+  s_841bdadb36d27c::t_eb5ef20cc9075e 45,63,66-68,95-97,122-124
+  s_841bdadb36d27c::t_bf20145da7fb7c 59,61,91
+  s_841bdadb36d27c::t_27157c3b5e0f3b 75,103
+  s_841bdadb36d27c::t_e2ecfbb1ef8b6a 1-36,39,41-44,46-51,54-58,60,62,64-65,69-74,76-79,81-89,92-94,98-102,106-117,121,125-130
+  s_841bdadb36d27c::t_a737ebf72a887b 37-38,40,52-53,104,118-119
+  s_841bdadb36d27c::t_6313f16503ea03 80,90,105,120
+Sources/Networking/NetworkClient.swift
+  s_841bdadb36d27c::t_894aa11692ce5e 66-71,80-81,85-90,92-93,97-124,131-136,182-183,193-202
+  s_841bdadb36d27c::t_27157c3b5e0f3b 184-190
+Sources/Networking/URLQueryEncoder.swift
+  s_841bdadb36d27c::t_6313f16503ea03 433
+  s_841bdadb36d27c::t_27157c3b5e0f3b 164-193,198-203,226-231,241-248
+  s_841bdadb36d27c::t_bb4fe5452254d5 115,306,380
+  s_841bdadb36d27c::t_018601f09bedbf 364
+  s_841bdadb36d27c::t_32046fa4e10041 137-138,140,143,145,148,151,153,155,157,160-163,194-197
+  s_841bdadb36d27c::t_bf20145da7fb7c 106,136,221-225,291-293,295,299,310,351-353,360,385,428
+  s_841bdadb36d27c::t_eb156c99a6ecb9 1-105,107,109-114,116-135,139,141-142,144,146-147,149-150,152,154,156,158-159,204-220,232-240,249-290,294,296-298,300-304,307-309,311-350,354-359,361-362,370-375,377,379,381-384,386-427,429-432,434-462
+  s_841bdadb36d27c::t_a5ce59e6ae62f1 108,305,376
+  s_841bdadb36d27c::t_e66fb70adcac69 363,365-369,378
+Tests/NetworkingTests/__Snapshots__/QueryCompositionTests/absoluteQueryCollisionUsesSemanticKeys.1.json
+  s_841bdadb36d27c::t_c212eae03faf53 1-3
+Tests/NetworkingTests/__Snapshots__/URLQueryEncoderTests/configuredEncodingSnapshot.1.txt
+  s_841bdadb36d27c::t_c212eae03faf53 1-4
+Sources/Networking/Endpoint.swift
+  s_841bdadb36d27c::t_bafe552aa08414 11
+  s_841bdadb36d27c::t_e2ecfbb1ef8b6a 15,21,26,131
+  s_841bdadb36d27c::t_14fe4b44e2a43b 123,129
+Sources/Networking/RequestConstructionError.swift
+  s_841bdadb36d27c::t_bafe552aa08414 8,10
+  s_841bdadb36d27c::t_0b15827a9e6c5b 23-28
+Tests/NetworkingTests/__Snapshots__/QueryCompositionTests/codableQuerySelectorIsCapturedOnce.1.json
+  s_841bdadb36d27c::t_c212eae03faf53 1-4
+Tests/NetworkingTests/__Snapshots__/URLQueryEncoderTests/dateStrategiesSnapshot.1.json
+  s_841bdadb36d27c::t_c212eae03faf53 1-5
+Tests/NetworkingTests/__Snapshots__/URLQueryEncoderTests/singleValueArrayElementsUseArrayStrategy.1.json
+  s_841bdadb36d27c::t_5aa3328c9fdd74 2
+  s_841bdadb36d27c::t_dc44f0cbb58877 1,3
+  s_841bdadb36d27c::t_6ac0fbe678cd6e 4
+Tests/NetworkingTests/__Snapshots__/URLQueryEncoderTests/defaultEncodingSnapshot.1.txt
+  s_841bdadb36d27c::t_c212eae03faf53 1-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0c1ad7c66531a34b7fa0dd75881f8a87ad9cd2f0",
+  "prompts": {},
+  "sessions": {
+    "s_841bdadb36d27c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0cf42-1100-7010-bf8b-ba58e01874df",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
