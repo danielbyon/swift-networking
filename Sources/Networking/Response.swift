@@ -15,9 +15,13 @@ public struct Response<Value: Sendable>: Sendable {
     /// The HTTP response metadata returned by the transport.
     public let httpResponse: HTTPResponse
 
-    package init(value: Value, httpResponse: HTTPResponse) {
+    /// The identity of the logical execution that produced this response.
+    public let requestID: RequestID
+
+    package init(value: Value, httpResponse: HTTPResponse, requestID: RequestID) {
         self.value = value
         self.httpResponse = httpResponse
+        self.requestID = requestID
     }
 }
 

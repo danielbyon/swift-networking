@@ -17,6 +17,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.8.0"),
+        .package(url: "https://github.com/pointfreeco/swift-snapshot-testing.git", from: "1.17.0"),
     ],
     targets: [
         .target(
@@ -37,7 +38,9 @@ let package = Package(
             name: "NetworkingTests",
             dependencies: [
                 "Networking",
+                .product(name: "SnapshotTesting", package: "swift-snapshot-testing"),
             ],
+            exclude: ["__Snapshots__"],
         ),
         .testTarget(
             name: "NetworkingTestSupportTests",
