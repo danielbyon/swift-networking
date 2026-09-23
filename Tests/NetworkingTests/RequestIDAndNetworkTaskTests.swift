@@ -27,12 +27,11 @@ struct RequestIDAndNetworkTaskTests {
         #expect(decoded == requestID)
     }
 
-    @Test("UUIDRequestIDGenerator is publicly constructible")
-    func uuidRequestIDGeneratorIsPubliclyConstructible() {
-        let generator = UUIDRequestIDGenerator()
-        let requestID = generator.generateRequestID()
+    @Test("NetworkClient.Configuration defaults to UUIDRequestIDGenerator")
+    func networkClientConfigurationDefaultsToUUIDRequestIDGenerator() {
+        let configuration = NetworkClient.Configuration()
 
-        #expect(requestID.rawValue.uuidString.isEmpty == false)
+        #expect(configuration.requestIDGenerator is UUIDRequestIDGenerator)
     }
 
     @Test("NetworkClient exposes the throwing configuration initializer")
@@ -260,6 +259,36 @@ struct RequestIDAndNetworkTaskTests {
         #expect(await transport.executionCount == 1)
     }
 
+    @Test("send surfaces cancellation when its caller is already cancelled")
+    func sendCallerAlreadyCancelledSurfacesCancellationError() async throws {
+        let transport = ControlledNetworkTransport(
+            outcome: .success(
+                Data([0x2a]),
+                HTTPResponse(status: .init(code: 200)),
+            ),
+            gated: false,
+        )
+        let client = NetworkClient(transport: transport, configuration: .init())
+        let gate = CancellationGate()
+        let sendTask = Task {
+            await gate.wait()
+            return try await client.send(makeRequest())
+        }
+
+        await gate.waitUntilWaiting()
+        sendTask.cancel()
+        await gate.open()
+
+        do {
+            _ = try await sendTask.value
+            Issue.record("Expected send to surface CancellationError")
+        } catch is CancellationError {
+            // Expected.
+        } catch {
+            Issue.record("Unexpected pre-cancelled-send error: \(error)")
+        }
+    }
+
     @Test("executing one Request twice creates independent logical executions")
     func sameRequestCreatesIndependentLogicalExecutions() async throws {
         let firstID = RequestID(rawValue: UUID())
@@ -290,6 +319,36 @@ struct RequestIDAndNetworkTaskTests {
 
 private enum ControlledTransportError: Error, Equatable, Sendable {
     case expectedFailure
+}
+
+private actor CancellationGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var readyContinuation: CheckedContinuation<Void, Never>?
+    private var isWaiting = false
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            isWaiting = true
+            readyContinuation?.resume()
+            readyContinuation = nil
+        }
+    }
+
+    func waitUntilWaiting() async {
+        guard isWaiting == false else {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            readyContinuation = continuation
+        }
+    }
+
+    func open() {
+        continuation?.resume()
+        continuation = nil
+    }
 }
 
 private actor ControlledNetworkTransport: NetworkTransport {

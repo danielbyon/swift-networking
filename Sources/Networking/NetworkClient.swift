@@ -103,9 +103,6 @@ public final class NetworkClient: Sendable {
     /// - Returns: The decoded response and its HTTP metadata.
     public func send<Output: Sendable>(_ request: Request<Output>) async throws -> Response<Output> {
         let task = task(for: request)
-        if Task.isCancelled {
-            task.cancel()
-        }
 
         return try await withTaskCancellationHandler(operation: {
             try await task.value
