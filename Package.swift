@@ -23,12 +23,14 @@ let package = Package(
             name: "Networking",
             dependencies: [
                 .product(name: "HTTPTypes", package: "swift-http-types"),
+                .product(name: "HTTPTypesFoundation", package: "swift-http-types"),
             ],
         ),
         .target(
             name: "NetworkingTestSupport",
             dependencies: [
                 "Networking",
+                .product(name: "HTTPTypes", package: "swift-http-types"),
             ],
         ),
         .testTarget(
@@ -41,6 +43,8 @@ let package = Package(
             name: "NetworkingTestSupportTests",
             dependencies: [
                 "NetworkingTestSupport",
+                "Networking",
+                .product(name: "HTTPTypes", package: "swift-http-types"),
             ],
         ),
     ],

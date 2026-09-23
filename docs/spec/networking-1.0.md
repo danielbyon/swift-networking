@@ -283,12 +283,20 @@ Use a public type:
 EndpointRoute<Input>
 ~~~
 
+`Input` is constrained only by `Sendable`. An endpoint owns its route definition; a request cannot
+replace it.
+
+Every input-derived `EndpointRoute<Input>` factory requires a concrete `Input` value as a
+construction witness. This rule applies to all input-derived route factories, including relative
+routes and any future route forms. The witness proves that `Input` has a value; it is not retained
+or used to resolve a request.
+
 ### 6.2 Relative routes
 
 Relative routes are expressed as structured path components:
 
 ~~~swift
-.relative { input in
+EndpointRoute<MyInput>.relative(forInput: exampleInput) { input in
     ["users", input.userID]
 }
 ~~~
@@ -310,9 +318,17 @@ Relative paths are structurally appended to the client's base URL. They are not 
 Absolute routes may dynamically derive a URL:
 
 ~~~swift
-.absolute { input in
+EndpointRoute<MyInput>.absolute(forInput: exampleInput) { input in
     input.url
 }
+~~~
+
+The input-derived absolute route factory follows the general witness rule above. This makes an
+input-derived route impossible to construct for `Input == Never`, while imposing no additional
+conformance on input types. A no-input endpoint uses a fixed absolute URL:
+
+~~~swift
+EndpointRoute<Never>.absolute(url)
 ~~~
 
 The URL may contain its own query parameters and fragment.

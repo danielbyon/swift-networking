@@ -16,6 +16,12 @@ An Endpoint declares method, route, query encoding, headers, request-body encodi
 
 Endpoint is immutable and value-based.
 
+### Endpoint route
+
+An endpoint-owned definition for resolving an invocation's absolute URL. A no-input endpoint has a
+fixed route; an input-bearing endpoint may derive its route from the bound input. A Request cannot
+replace the endpoint's route.
+
 ### Request
 
 A concrete immutable invocation of an Endpoint.
