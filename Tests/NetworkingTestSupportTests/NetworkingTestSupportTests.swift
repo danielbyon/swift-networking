@@ -16,7 +16,7 @@ func sendReturnsRawDataResponse() async throws {
     let payload = Data([0x00, 0x7f, 0xff])
     let httpResponse = HTTPResponse(status: .init(code: 206))
     let transport = StubNetworkTransport(response: payload, httpResponse: httpResponse)
-    let client = NetworkClient(transport: transport)
+    let client = try NetworkClient(transport: transport)
     let endpoint = try Endpoint<Never, Never, Data>.data(
         method: .get,
         route: .absolute(#require(URL(string: "https://example.com/raw"))),
@@ -35,7 +35,7 @@ func sendPreservesMethodAndAbsoluteRoute() async throws {
         response: Data(),
         httpResponse: HTTPResponse(status: .init(code: 200)),
     )
-    let client = NetworkClient(transport: transport)
+    let client = try NetworkClient(transport: transport)
     let endpoint = try Endpoint<Never, Never, Data>.data(
         method: .post,
         route: .absolute(#require(URL(string: "https://example.com/submit"))),
@@ -56,7 +56,7 @@ func requestBindsInputDerivedRoute() async throws {
         response: Data([0x2a]),
         httpResponse: HTTPResponse(status: .init(code: 200)),
     )
-    let client = NetworkClient(transport: transport)
+    let client = try NetworkClient(transport: transport)
     let routePrefix = try #require(URL(string: "https://example.com/items/"))
     let endpoint = Endpoint<String, Never, Data>.data(
         method: .get,
@@ -77,7 +77,7 @@ func requestBindsInputDerivedRoute() async throws {
 @Test("send propagates transport errors unchanged")
 func sendPropagatesTransportError() async throws {
     let transport = StubNetworkTransport(error: .expectedFailure)
-    let client = NetworkClient(transport: transport)
+    let client = try NetworkClient(transport: transport)
     let endpoint = try Endpoint<Never, Never, Data>.data(
         method: .get,
         route: .absolute(#require(URL(string: "https://example.com/failure"))),
@@ -99,7 +99,7 @@ func sendingSameRequestExecutesTransportTwice() async throws {
     let payload = Data([0x10, 0x20])
     let httpResponse = HTTPResponse(status: .init(code: 200))
     let transport = StubNetworkTransport(response: payload, httpResponse: httpResponse)
-    let client = NetworkClient(transport: transport)
+    let client = try NetworkClient(transport: transport)
     let endpoint = try Endpoint<Never, Never, Data>.data(
         method: .get,
         route: .absolute(#require(URL(string: "https://example.com/reused"))),

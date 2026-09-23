@@ -11,7 +11,7 @@ import HTTPTypes
 /// An immutable invocation of an endpoint with its input and body dimensions erased.
 public struct Request<Output: Sendable>: Sendable {
     package let method: HTTPRequest.Method
-    package let url: URL
+    package let route: ResolvedEndpointRoute
     package let response: ResponseDecoding<Output>
 
     /// Binds endpoint input to a bodyless endpoint and resolves its route.
@@ -21,7 +21,7 @@ public struct Request<Output: Sendable>: Sendable {
     ///   - input: The value used to resolve the endpoint route.
     public init<Input: Sendable>(endpoint: Endpoint<Input, Never, Output>, input: Input) {
         method = endpoint.method
-        url = endpoint.route.resolve(input: input)
+        route = endpoint.route.resolve(input: input)
         response = endpoint.response
     }
 
@@ -30,7 +30,7 @@ public struct Request<Output: Sendable>: Sendable {
     /// - Parameter endpoint: The reusable endpoint contract with a fixed absolute route.
     public init(endpoint: Endpoint<Never, Never, Output>) {
         method = endpoint.method
-        url = endpoint.route.constantURL
+        route = endpoint.route.constantRoute
         response = endpoint.response
     }
 }
