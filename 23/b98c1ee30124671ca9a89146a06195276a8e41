@@ -1,0 +1,61 @@
+Sources/Networking/Response.swift
+  s_8d235a1deac755::t_704508e9a62922 2,8,10-26
+Sources/NetworkingTestSupport/StubNetworkTransport.swift
+  s_8d235a1deac755::t_b7990c8fa5a002 1-26,28-30,32-34,37-44,46-48,50-51
+  s_8d235a1deac755::t_3ebd14f1a97aa5 27,31,35-36,45,49
+docs/adr/0001-input-witnessed-endpoint-routes.md
+  s_8d235a1deac755::t_a8f9b99a88f464 1-26
+Tests/NetworkingTests/NetworkingTests.swift
+  s_8d235a1deac755::t_c44d3be22bc101 8,14-22
+Package.swift
+  s_8d235a1deac755::t_9edbb31a7c45ca 26,33,46-47
+Tests/NetworkingTestSupportTests/NetworkingTestSupportTests.swift
+  s_8d235a1deac755::t_9edbb31a7c45ca 9-10,14-15,17-19,21,24-35,37-38,40,43-49,51-55,58-59,62,67,69-72,74-77,79-80,82,85-102,104,107-116
+  s_8d235a1deac755::t_4119007c85abac 61,64-65,68
+  s_8d235a1deac755::t_3ebd14f1a97aa5 60
+  s_8d235a1deac755::t_12df082a43185c 41,50
+  s_8d235a1deac755::t_d92f5349463cca 63
+  s_8d235a1deac755::t_b3a62e40873434 8
+  s_8d235a1deac755::t_6c15d484e9228d 16,20,22-23,36,39,42,56-57,66,73,78,81,83-84,103,105-106
+Sources/Networking/Request.swift
+  s_8d235a1deac755::t_a294ae1e89f507 33
+  s_8d235a1deac755::t_6c15d484e9228d 23-25,32,34
+  s_8d235a1deac755::t_704508e9a62922 1-22,26-31,35-36
+docs/spec/networking-1.0.md
+  s_8d235a1deac755::t_e30e96a4f23b70 289-293,299,326-328
+  s_8d235a1deac755::t_a8f9b99a88f464 286-288,321,329-331
+  s_8d235a1deac755::t_b0d6a1fb144b38 332-333
+Sources/Networking/ResponseDecoding.swift
+  s_8d235a1deac755::t_704508e9a62922 1-15,17-19,21-29
+  s_8d235a1deac755::t_6c15d484e9228d 16,20
+CONTEXT.md
+  s_8d235a1deac755::t_a8f9b99a88f464 19-24
+Sources/Networking/Endpoint.swift
+  s_8d235a1deac755::t_6c15d484e9228d 20,39,51,91
+  s_8d235a1deac755::t_70144d6b96dbc1 52,55-58,60-64
+  s_8d235a1deac755::t_704508e9a62922 1-19,21-35,38,40-46,67-75,77-90,92-95
+  s_8d235a1deac755::t_9ec573fba128e2 65
+  s_8d235a1deac755::t_a294ae1e89f507 36-37,47-50,53-54,59,76
+  s_8d235a1deac755::t_090407f673101a 66
+Sources/Networking/NetworkClient.swift
+  s_8d235a1deac755::t_6c15d484e9228d 33,58
+  s_8d235a1deac755::t_a294ae1e89f507 16-24,29
+  s_8d235a1deac755::t_12df082a43185c 57
+  s_8d235a1deac755::t_704508e9a62922 1-15,25-28,30-32,34-56,59-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "23b98c1ee30124671ca9a89146a06195276a8e41",
+  "prompts": {},
+  "sessions": {
+    "s_8d235a1deac755": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ca71-042c-74f3-94b4-a4777bb9f085",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
