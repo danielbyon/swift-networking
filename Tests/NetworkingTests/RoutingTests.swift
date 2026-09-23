@@ -127,8 +127,20 @@ struct RoutingTests {
 
     @Test("Relative route components stay encoded within the configured base path")
     func relativeRouteComponentsStayWithinBasePath() async throws {
-        let components = ["users", "a/b", "?query", "#fragment", "space and snowman ☃", ".", ".."]
-        let expectedURL = "https://example.com/api/v1/users/a%2Fb/%3Fquery/%23fragment/space%20and%20snowman%20%E2%98%83/%2E/%2E%2E"
+        let components = [
+            "users",
+            "a/b",
+            "?query",
+            "#fragment",
+            "space and snowman ☃",
+            ".",
+            "..",
+            "v1.2.0",
+            "file.json",
+            ".well-known",
+            "a..b",
+        ]
+        let expectedURL = "https://example.com/api/v1/users/a%2Fb/%3Fquery/%23fragment/space%20and%20snowman%20%E2%98%83/%2E/%2E%2E/v1.2.0/file.json/.well-known/a..b"
 
         for baseURLString in ["https://example.com/api/v1", "https://example.com/api/v1/"] {
             let transport = RoutingRecordingTransport()

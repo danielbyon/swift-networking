@@ -262,10 +262,16 @@ public final class NetworkClient: Sendable {
     }
 
     private static func percentEncodePathComponent(_ component: String, requestID: RequestID) throws -> String {
-        var allowedCharacters = CharacterSet(
+        if component == "." {
+            return "%2E"
+        }
+        if component == ".." {
+            return "%2E%2E"
+        }
+
+        let allowedCharacters = CharacterSet(
             charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~!$&'()*+,;=:@",
         )
-        allowedCharacters.remove(charactersIn: ".")
 
         guard let encodedComponent = component.addingPercentEncoding(withAllowedCharacters: allowedCharacters) else {
             throw RequestConstructionError(requestID: requestID, reason: .urlCompositionFailed)
