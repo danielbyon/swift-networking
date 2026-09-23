@@ -1,0 +1,20 @@
+Tests/NetworkingTests/RequestIDAndNetworkTaskTests.swift
+  s_8a5efe98cc0448::t_3417817bb7d61e 30-32,34,262-291,324-351
+  s_8a5efe98cc0448::t_4a38c42314aa53 352-353
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aec0a79ee4881c4ba49e6673ac9760deb5351b82",
+  "prompts": {},
+  "sessions": {
+    "s_8a5efe98cc0448": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0cd64-7aab-7863-b8c0-2fdcd4922382",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
