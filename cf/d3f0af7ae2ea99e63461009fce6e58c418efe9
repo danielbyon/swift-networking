@@ -1,0 +1,15 @@
+.serena/project.yml
+  h_a1fa5c19d60fed 39
+  h_a1fa5c19d60fed 38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cfd3f0af7ae2ea99e63461009fce6e58c418efe9",
+  "prompts": {},
+  "humans": {
+    "h_a1fa5c19d60fed": {
+      "author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
