@@ -1,0 +1,21 @@
+Tests/NetworkingTests/RoutingTests.swift
+  s_e4a28b26353919::t_d7568bf8cd47a0 130-143
+Sources/Networking/NetworkClient.swift
+  s_e4a28b26353919::t_47e0dbe92bf252 265-272
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aba8693083d80eba6b2c1e87fcabaafac80240dd",
+  "prompts": {},
+  "sessions": {
+    "s_e4a28b26353919": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ce43-3d1d-7932-a0b2-0b740f8202bd",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
