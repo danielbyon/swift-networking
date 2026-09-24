@@ -63,6 +63,9 @@ public final class NetworkClient: Sendable {
         /// The optional HTTP or HTTPS base URL used to compose relative routes.
         public let baseURL: URL?
 
+        /// Client-wide default HTTP fields applied before endpoint and request fields.
+        public let defaultHeaders: HTTPFields
+
         /// Static query items applied to relative routes before endpoint and request query items.
         public let defaultQueryItems: [URLQueryItem]
 
@@ -77,6 +80,7 @@ public final class NetworkClient: Sendable {
         ///   contain a query or fragment.
         public init(baseURL: URL? = nil) {
             self.baseURL = baseURL
+            defaultHeaders = HTTPFields()
             defaultQueryItems = []
             urlQueryEncoderConfiguration = .init()
             requestIDGenerator = UUIDRequestIDGenerator()
@@ -84,11 +88,13 @@ public final class NetworkClient: Sendable {
 
         private init(
             baseURL: URL?,
+            defaultHeaders: HTTPFields,
             defaultQueryItems: [URLQueryItem],
             urlQueryEncoderConfiguration: URLQueryEncoder.Configuration,
             requestIDGenerator: any RequestIDGenerator,
         ) {
             self.baseURL = baseURL
+            self.defaultHeaders = defaultHeaders
             self.defaultQueryItems = defaultQueryItems
             self.urlQueryEncoderConfiguration = urlQueryEncoderConfiguration
             self.requestIDGenerator = requestIDGenerator
@@ -101,6 +107,7 @@ public final class NetworkClient: Sendable {
         public func withDefaultQueryItems(_ queryItems: [URLQueryItem]) -> Self {
             Self(
                 baseURL: baseURL,
+                defaultHeaders: defaultHeaders,
                 defaultQueryItems: queryItems,
                 urlQueryEncoderConfiguration: urlQueryEncoderConfiguration,
                 requestIDGenerator: requestIDGenerator,
@@ -116,6 +123,7 @@ public final class NetworkClient: Sendable {
         ) -> Self {
             Self(
                 baseURL: baseURL,
+                defaultHeaders: defaultHeaders,
                 defaultQueryItems: defaultQueryItems,
                 urlQueryEncoderConfiguration: configuration,
                 requestIDGenerator: requestIDGenerator,
@@ -130,9 +138,24 @@ public final class NetworkClient: Sendable {
         public func withRequestIDGenerator(_ generator: any RequestIDGenerator) -> Self {
             Self(
                 baseURL: baseURL,
+                defaultHeaders: defaultHeaders,
                 defaultQueryItems: defaultQueryItems,
                 urlQueryEncoderConfiguration: urlQueryEncoderConfiguration,
                 requestIDGenerator: generator,
+            )
+        }
+
+        /// Returns a copy with replacement client-wide default HTTP fields.
+        ///
+        /// - Parameter fields: The client defaults in caller-supplied order.
+        /// - Returns: A configuration with the replacement client header layer.
+        public func withDefaultHeaders(_ fields: HTTPFields) -> Self {
+            Self(
+                baseURL: baseURL,
+                defaultHeaders: fields,
+                defaultQueryItems: defaultQueryItems,
+                urlQueryEncoderConfiguration: urlQueryEncoderConfiguration,
+                requestIDGenerator: requestIDGenerator,
             )
         }
     }
@@ -179,6 +202,7 @@ public final class NetworkClient: Sendable {
         let requestID = configuration.requestIDGenerator.generateRequestID()
         let networkTransport = transport
         let baseURL = configuration.baseURL
+        let clientDefaultHeaders = configuration.defaultHeaders
         let clientQueryItems = configuration.defaultQueryItems
         let clientEncoderConfiguration = configuration.urlQueryEncoderConfiguration
         let routeKind: QueryRouteKind =
@@ -200,7 +224,13 @@ public final class NetworkClient: Sendable {
                 requestQueryItems: request.requestQueryItems,
                 requestID: requestID,
             )
-            let httpRequest = HTTPRequest(method: request.method, url: url)
+            let headerFields = HeaderComposer.compose(
+                libraryInferred: HTTPFields(),
+                clientDefaults: clientDefaultHeaders,
+                endpoint: request.endpointHeaders,
+                request: request.requestHeaders,
+            )
+            let httpRequest = HTTPRequest(method: request.method, url: url, headerFields: headerFields)
             let (data, httpResponse) = try await networkTransport.execute(httpRequest)
             let value = try request.response.decode(data, response: httpResponse)
             return Response(value: value, httpResponse: httpResponse, requestID: requestID)
