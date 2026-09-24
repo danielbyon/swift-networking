@@ -52,7 +52,7 @@ package enum QueryComposer {
 
         var values: [ComposedQueryItem] =
             if routeKind == .absolute {
-                try rawItems(from: url, requestID: requestID)
+                rawItems(from: url)
             } else {
                 try clientQueryItems.map {
                     try ComposedQueryItem.generated($0, requestID: requestID)
@@ -88,21 +88,27 @@ package enum QueryComposer {
         }
 
         let keys = Set(items.map(\.name))
-        values.removeAll { keys.contains($0.semanticKey) }
+        values.removeAll { item in
+            guard let semanticKey = item.semanticKey else {
+                return false
+            }
+
+            return keys.contains(semanticKey)
+        }
         let generatedItems = try items.map {
             try ComposedQueryItem.generated($0, requestID: requestID)
         }
         values.append(contentsOf: generatedItems)
     }
 
-    private static func rawItems(from url: URL, requestID: RequestID) throws -> [ComposedQueryItem] {
+    private static func rawItems(from url: URL) -> [ComposedQueryItem] {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let query = components.percentEncodedQuery
         else {
             return []
         }
 
-        return try query.split(separator: "&", omittingEmptySubsequences: false).map { segment in
+        return query.split(separator: "&", omittingEmptySubsequences: false).map { segment in
             let rawSegment = String(segment)
             let rawKey =
                 if let first = rawSegment.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
@@ -111,19 +117,16 @@ package enum QueryComposer {
                 } else {
                     ""
                 }
-            guard let semanticKey = rawKey.removingPercentEncoding else {
-                throw RequestConstructionError(requestID: requestID, reason: .queryCompositionFailed)
-            }
-
+            let semanticKey = rawKey.removingPercentEncoding
             return .raw(semanticKey: semanticKey, value: rawSegment)
         }
     }
 
     private struct ComposedQueryItem {
-        let semanticKey: String
+        let semanticKey: String?
         let percentEncodedValue: String
 
-        static func raw(semanticKey: String, value: String) -> Self {
+        static func raw(semanticKey: String?, value: String) -> Self {
             Self(semanticKey: semanticKey, percentEncodedValue: value)
         }
 

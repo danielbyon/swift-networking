@@ -84,6 +84,32 @@ struct QueryCompositionTests {
     }
 
     @Test
+    func absoluteOpaqueEmbeddedQueryKeyIsPreservedWhileAddingLayers() async throws {
+        let transport = QueryRecordingTransport()
+        let routeURL = try makeURL("https://example.com/items?%FF=opaque&keep=%2f")
+        let client = try NetworkClient(transport: transport)
+        let endpoint = Endpoint<Never, Never, Data>.data(
+            method: .get,
+            route: .absolute(routeURL),
+            response: .data,
+            query: .items([
+                URLQueryItem(name: "%FF", value: "literal-key"),
+                URLQueryItem(name: "endpoint", value: "value"),
+            ]),
+        )
+        let request = Request(endpoint: endpoint).queryItems([
+            URLQueryItem(name: "request", value: "value"),
+        ])
+
+        _ = try await client.send(request)
+
+        let recordedURLs = await transport.recordedURLs()
+        #expect(recordedURLs.first?.contains("?%FF=opaque&keep=%2f&") == true)
+        #expect(recordedURLs.first?.contains("%25FF=literal-key") == true)
+        assertSnapshot(of: recordedURLs, as: .json)
+    }
+
+    @Test
     func codableQuerySelectorIsCapturedOnce() async throws {
         let transport = QueryRecordingTransport()
         let firstID = try RequestID(rawValue: #require(UUID(uuidString: "00000000-0000-0000-0000-000000000001")))

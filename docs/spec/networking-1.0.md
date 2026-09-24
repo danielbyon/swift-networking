@@ -410,6 +410,9 @@ Defaults:
 - arrays → repeated key
 - nested keyed containers → unsupported
 
+Array fields preserve the source order of their elements. `Set` values and dictionaries whose Codable
+representation is unkeyed are rejected rather than serialized in unspecified iteration order.
+
 Array strategies:
 
 ~~~swift
@@ -439,7 +442,10 @@ Date strategies include at minimum:
 
 Default: iso8601.
 
-Unsupported nested keyed containers throw a precise URLQueryEncodingError.
+Top-level unkeyed containers and nested keyed or nested unkeyed containers are unsupported, even
+when they contain no values. An empty first-level array field is valid and emits no query items.
+Unsupported nested single values throw `URLQueryEncodingError.unsupportedSingleValue(codingPath:)`.
+Known unordered collections throw `URLQueryEncodingError.unorderedCollection(codingPath:)`.
 
 ### 8.3 Selection from input
 

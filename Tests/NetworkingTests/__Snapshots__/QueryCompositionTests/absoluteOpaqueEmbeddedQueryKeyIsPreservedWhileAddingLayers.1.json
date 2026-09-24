@@ -1,0 +1,3 @@
+[
+  "https:\/\/example.com\/items?%FF=opaque&keep=%2f&%25FF=literal-key&endpoint=value&request=value"
+]
