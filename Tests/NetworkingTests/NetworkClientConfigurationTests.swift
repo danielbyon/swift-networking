@@ -106,7 +106,7 @@ struct NetworkClientConfigurationTests {
         ]
 
         for (configuration, expectedFailure) in cases {
-            #expect(try configurationFailures(configuration) == [expectedFailure])
+            try expectConfigurationFailures([expectedFailure], from: configuration)
         }
     }
 
@@ -117,13 +117,16 @@ struct NetworkClientConfigurationTests {
             .withRequestTimeout(.zero)
             .withResourceTimeout(.seconds(-1))
 
-        #expect(try configurationFailures(configuration) == [
-            .baseURLScheme,
-            .baseURLQuery,
-            .baseURLFragment,
-            .requestTimeout,
-            .resourceTimeout,
-        ])
+        try expectConfigurationFailures(
+            [
+                .baseURLScheme,
+                .baseURLQuery,
+                .baseURLFragment,
+                .requestTimeout,
+                .resourceTimeout,
+            ],
+            from: configuration,
+        )
     }
 
     @Test("Timeout validation runs without a base URL and accepts nil or positive values")
@@ -138,7 +141,7 @@ struct NetworkClientConfigurationTests {
             .withRequestTimeout(.zero)
             .withResourceTimeout(.seconds(-1))
 
-        #expect(try configurationFailures(invalidTimeouts) == [.requestTimeout, .resourceTimeout])
+        try expectConfigurationFailures([.requestTimeout, .resourceTimeout], from: invalidTimeouts)
     }
 
     @Test("HTTP/3 preference is applied to an outgoing URLRequest only when configured")
@@ -209,14 +212,14 @@ private func expectUnmodifiedPolicies(
     }
 }
 
-private func configurationFailures(
-    _ configuration: NetworkClient.Configuration,
-) throws -> [NetworkClient.ConfigurationError.Failure] {
+private func expectConfigurationFailures(
+    _ expectedFailures: [NetworkClient.ConfigurationError.Failure],
+    from configuration: NetworkClient.Configuration,
+) throws {
     do {
         _ = try NetworkClient(configuration: configuration)
         Issue.record("Expected invalid configuration to fail initialization")
-        return []
     } catch let error as NetworkClient.ConfigurationError {
-        return error.failures
+        #expect(error.failures == expectedFailures)
     }
 }
