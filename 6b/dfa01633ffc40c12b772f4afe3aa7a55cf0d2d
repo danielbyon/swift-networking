@@ -1,0 +1,25 @@
+Sources/Networking/Endpoint.swift
+  s_a96b22453dd376::t_d3ac578279e976 124,148
+  s_a96b22453dd376::t_99bf4b1961ce59 137-140,162-165
+Tests/NetworkingTests/BodyEncodingAndResponseDecodingTests.swift
+  s_a96b22453dd376::t_0bdfe84e861581 525-529
+  s_a96b22453dd376::t_269455eca17b0e 176
+  s_a96b22453dd376::t_9c5089f6bba2aa 191
+  s_a96b22453dd376::t_30b34f78f8358e 152-175,177-190,192-205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6bdfa01633ffc40c12b772f4afe3aa7a55cf0d2d",
+  "prompts": {},
+  "sessions": {
+    "s_a96b22453dd376": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d37b-6eae-7683-b0d7-e4162a4ab4df",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
