@@ -382,6 +382,15 @@ Conceptual factories:
 
 An endpoint chooses one endpoint-level query construction mechanism rather than combining several independent query builders.
 
+Input-bearing `.items` and `.codable` factories accept their builder or selector directly, without a
+witness value. `Request` captures an input-bearing builder or selector once when it binds endpoint
+input. The fixed no-input forms are `QueryEncoding<Never>.items(_:)` and
+`QueryEncoding<Never>.codable(_:, configuration:)`.
+
+Swift permits a closure-based `QueryEncoding<Never>` to be constructed, including through generic
+code. A no-input Request treats that query as absent and never invokes its closure. The query
+contract is safe non-execution for `Never`, not static prevention of every closure-based value.
+
 ### 8.2 URLQueryEncoder
 
 The library provides:
@@ -400,6 +409,12 @@ Defaults:
 - Date → ISO-8601
 - arrays → repeated key
 - nested keyed containers → unsupported
+
+Array fields preserve the source order of their elements. `Set` values and dictionaries whose Codable
+representation is unkeyed are rejected rather than serialized in unspecified iteration order.
+`CodingKeyRepresentable` dictionaries are encoded as keyed values, but are rejected when distinct keys
+map to the same `codingKey.stringValue`, since their values would otherwise follow unspecified
+dictionary iteration order.
 
 Array strategies:
 
@@ -430,7 +445,12 @@ Date strategies include at minimum:
 
 Default: iso8601.
 
-Unsupported nested keyed containers throw a precise URLQueryEncodingError.
+Top-level unkeyed containers throw `URLQueryEncodingError.topLevelContainerUnsupported`. Nested keyed
+and nested unkeyed containers throw `URLQueryEncodingError.nestedKeyedContainer(codingPath:)` and
+`URLQueryEncodingError.nestedUnkeyedContainer(codingPath:)`, even when they contain no values. An
+empty first-level array field is valid and emits no query items. Unsupported nested single values throw
+`URLQueryEncodingError.unsupportedSingleValue(codingPath:)`. Known unordered collections throw
+`URLQueryEncodingError.unorderedCollection(codingPath:)`.
 
 ### 8.3 Selection from input
 

@@ -63,6 +63,12 @@ public final class NetworkClient: Sendable {
         /// The optional HTTP or HTTPS base URL used to compose relative routes.
         public let baseURL: URL?
 
+        /// Static query items applied to relative routes before endpoint and request query items.
+        public let defaultQueryItems: [URLQueryItem]
+
+        /// Client-wide defaults for Codable query serialization.
+        public let urlQueryEncoderConfiguration: URLQueryEncoder.Configuration
+
         package let requestIDGenerator: any RequestIDGenerator
 
         /// Creates client configuration with an optional base URL.
@@ -71,12 +77,49 @@ public final class NetworkClient: Sendable {
         ///   contain a query or fragment.
         public init(baseURL: URL? = nil) {
             self.baseURL = baseURL
+            defaultQueryItems = []
+            urlQueryEncoderConfiguration = .init()
             requestIDGenerator = UUIDRequestIDGenerator()
         }
 
-        private init(baseURL: URL?, requestIDGenerator: any RequestIDGenerator) {
+        private init(
+            baseURL: URL?,
+            defaultQueryItems: [URLQueryItem],
+            urlQueryEncoderConfiguration: URLQueryEncoder.Configuration,
+            requestIDGenerator: any RequestIDGenerator,
+        ) {
             self.baseURL = baseURL
+            self.defaultQueryItems = defaultQueryItems
+            self.urlQueryEncoderConfiguration = urlQueryEncoderConfiguration
             self.requestIDGenerator = requestIDGenerator
+        }
+
+        /// Returns a copy with replacement static query items for relative routes.
+        ///
+        /// - Parameter queryItems: The static client query items in caller-supplied order.
+        /// - Returns: A configuration with the replacement default query layer.
+        public func withDefaultQueryItems(_ queryItems: [URLQueryItem]) -> Self {
+            Self(
+                baseURL: baseURL,
+                defaultQueryItems: queryItems,
+                urlQueryEncoderConfiguration: urlQueryEncoderConfiguration,
+                requestIDGenerator: requestIDGenerator,
+            )
+        }
+
+        /// Returns a copy with replacement client-wide Codable query encoder defaults.
+        ///
+        /// - Parameter configuration: The strategy overrides used by future logical executions.
+        /// - Returns: A configuration with the replacement encoder defaults.
+        public func withURLQueryEncoderConfiguration(
+            _ configuration: URLQueryEncoder.Configuration,
+        ) -> Self {
+            Self(
+                baseURL: baseURL,
+                defaultQueryItems: defaultQueryItems,
+                urlQueryEncoderConfiguration: configuration,
+                requestIDGenerator: requestIDGenerator,
+            )
         }
 
         /// Returns a copy that uses the supplied logical-execution identity generator.
@@ -85,7 +128,12 @@ public final class NetworkClient: Sendable {
         ///   logical executions created by the client.
         /// - Returns: A configuration with the replacement generator.
         public func withRequestIDGenerator(_ generator: any RequestIDGenerator) -> Self {
-            Self(baseURL: baseURL, requestIDGenerator: generator)
+            Self(
+                baseURL: baseURL,
+                defaultQueryItems: defaultQueryItems,
+                urlQueryEncoderConfiguration: urlQueryEncoderConfiguration,
+                requestIDGenerator: generator,
+            )
         }
     }
 
@@ -131,9 +179,27 @@ public final class NetworkClient: Sendable {
         let requestID = configuration.requestIDGenerator.generateRequestID()
         let networkTransport = transport
         let baseURL = configuration.baseURL
+        let clientQueryItems = configuration.defaultQueryItems
+        let clientEncoderConfiguration = configuration.urlQueryEncoderConfiguration
+        let routeKind: QueryRouteKind =
+            switch request.route {
+            case .absolute:
+                .absolute
+            case .relative:
+                .relative
+            }
 
         return NetworkTask(requestID: requestID) {
-            let url = try Self.preflightURL(for: request.route, baseURL: baseURL, requestID: requestID)
+            let routeURL = try Self.preflightURL(for: request.route, baseURL: baseURL, requestID: requestID)
+            let url = try QueryComposer.compose(
+                url: routeURL,
+                routeKind: routeKind,
+                clientQueryItems: clientQueryItems,
+                clientEncoderConfiguration: clientEncoderConfiguration,
+                endpointQuery: request.query,
+                requestQueryItems: request.requestQueryItems,
+                requestID: requestID,
+            )
             let httpRequest = HTTPRequest(method: request.method, url: url)
             let (data, httpResponse) = try await networkTransport.execute(httpRequest)
             let value = try request.response.decode(data, response: httpResponse)

@@ -1,0 +1,4 @@
+[
+  "https:\/\/example.com\/api\/items?client=one&endpoint=value&shared=request-1&shared=request-2&request=value",
+  "https:\/\/example.com\/api\/items?client=one&endpoint=value&shared=request-1&shared=request-2&request=value"
+]
