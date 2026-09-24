@@ -149,6 +149,60 @@ struct BodyEncodingAndResponseDecodingTests {
         }
     }
 
+    @Test("Chained endpoint encoder configurations compose")
+    func chainedEndpointEncoderConfigurationsCompose() async throws {
+        let payload = ChainedCodecPayload(
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            displayName: "Ada",
+        )
+        let endpoint = try Endpoint<Never, ChainedCodecPayload, Data>.data(
+            method: .post,
+            route: .absolute(makeURL()),
+            body: .json(),
+            response: .data,
+        )
+        .jsonEncoderConfiguration { $0.dateEncodingStrategy = .iso8601 }
+        .jsonEncoderConfiguration { $0.keyEncodingStrategy = .convertToSnakeCase }
+        let transport = BodyRecordingTransport()
+        let client = try NetworkClient(transport: transport)
+
+        _ = try await client.send(Request(endpoint: endpoint, body: payload))
+
+        let sentRequest = try #require(await transport.recordedRequests().first)
+        guard case let .data(bytes, _) = sentRequest.body else {
+            Issue.record("Expected the JSON body to reach the transport")
+            return
+        }
+
+        let json = String(decoding: bytes, as: UTF8.self)
+        #expect(json.contains("\"created_at\":\"2023-11-14T22:13:20Z\""))
+        #expect(json.contains("\"display_name\":\"Ada\""))
+    }
+
+    @Test("Chained endpoint decoder configurations compose")
+    func chainedEndpointDecoderConfigurationsCompose() async throws {
+        let expected = ChainedCodecPayload(
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            displayName: "Ada",
+        )
+        let endpoint = try Endpoint<Never, Never, ChainedCodecPayload>.data(
+            method: .get,
+            route: .absolute(makeURL()),
+            response: .json(),
+        )
+        .jsonDecoderConfiguration { $0.dateDecodingStrategy = .iso8601 }
+        .jsonDecoderConfiguration { $0.keyDecodingStrategy = .convertFromSnakeCase }
+        let responseData = Data(
+            #"{"created_at":"2023-11-14T22:13:20Z","display_name":"Ada"}"#.utf8,
+        )
+        let transport = BodyRecordingTransport(responseData: responseData)
+        let client = try NetworkClient(transport: transport)
+
+        let response = try await client.send(Request(endpoint: endpoint))
+
+        #expect(response.value == expected)
+    }
+
     @Test("Inferred JSON headers yield to client endpoint and request headers")
     func inferredJSONHeadersYieldToExplicitLayers() async throws {
         let endpoint = try Endpoint<Never, TimestampPayload, CodablePayload>.data(
@@ -466,6 +520,11 @@ private struct CodablePayload: Codable, Sendable, Equatable {
 
 private struct TimestampPayload: Codable, Sendable, Equatable {
     let timestamp: Date
+}
+
+private struct ChainedCodecPayload: Codable, Sendable, Equatable {
+    let createdAt: Date
+    let displayName: String
 }
 
 private struct CustomBody: Sendable {

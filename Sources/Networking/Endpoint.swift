@@ -121,7 +121,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
 
     /// Returns a copy that configures the fresh JSON encoder used for this endpoint's bodies.
     ///
-    /// The client configuration runs first, followed by this endpoint configuration.
+    /// The client configuration runs first, followed by endpoint configurations in modifier order.
     ///
     /// - Parameter configure: A Sendable configuration closure applied to each fresh encoder.
     /// - Returns: An endpoint copy with the supplied JSON encoder configuration.
@@ -134,7 +134,10 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             query: query,
             bodyEncoding: bodyEncoding,
             response: response,
-            jsonEncoderConfiguration: configure,
+            jsonEncoderConfiguration: { encoder in
+                jsonEncoderConfiguration(encoder)
+                configure(encoder)
+            },
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             headerStorage: headerStorage,
         )
@@ -142,7 +145,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
 
     /// Returns a copy that configures the fresh JSON decoder used for this endpoint's responses.
     ///
-    /// The client configuration runs first, followed by this endpoint configuration.
+    /// The client configuration runs first, followed by endpoint configurations in modifier order.
     ///
     /// - Parameter configure: A Sendable configuration closure applied to each fresh decoder.
     /// - Returns: An endpoint copy with the supplied JSON decoder configuration.
@@ -156,7 +159,10 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             bodyEncoding: bodyEncoding,
             response: response,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
-            jsonDecoderConfiguration: configure,
+            jsonDecoderConfiguration: { decoder in
+                jsonDecoderConfiguration(decoder)
+                configure(decoder)
+            },
             headerStorage: headerStorage,
         )
     }
