@@ -17,14 +17,14 @@ public struct BodyEncoding<Body: Sendable>: Sendable {
         Body,
         JSONEncoderConfiguration,
         JSONEncoderConfiguration,
-    ) throws -> PreparedRequestBody)?
+    ) throws -> PreparedBody)?
 
     private init(
         prepare: @escaping @Sendable (
             Body,
             JSONEncoderConfiguration,
             JSONEncoderConfiguration,
-        ) throws -> PreparedRequestBody,
+        ) throws -> PreparedBody,
     ) {
         prepareValue = prepare
     }
@@ -38,7 +38,7 @@ public struct BodyEncoding<Body: Sendable>: Sendable {
         _ body: Body,
         clientJSONEncoderConfiguration: JSONEncoderConfiguration,
         endpointJSONEncoderConfiguration: JSONEncoderConfiguration,
-    ) throws -> PreparedRequestBody {
+    ) throws -> PreparedBody {
         guard let prepareValue else {
             return .none
         }
@@ -106,7 +106,17 @@ extension BodyEncoding where Body == Never {
     }
 }
 
-package enum PreparedRequestBody: Sendable {
+/// A read-only view of the body prepared for a pending transport attempt.
+public enum PreparedRequestBody: Sendable {
+    /// The request has no body.
+    case none
+    /// The request body is available as in-memory bytes.
+    case data(Data)
+    /// The request body is retained as a file URL.
+    case file(URL)
+}
+
+package enum PreparedBody: Sendable {
     case none
     case data(Data, contentType: String?)
     case file(URL, contentType: String?)
@@ -128,13 +138,24 @@ package enum PreparedRequestBody: Sendable {
         }
         return fields
     }
+
+    package var inspection: PreparedRequestBody {
+        switch self {
+        case .none:
+            .none
+        case let .data(data, _):
+            .data(data)
+        case let .file(url, _):
+            .file(url)
+        }
+    }
 }
 
 package struct RequestBody: Sendable {
     private let prepareValue: @Sendable (
         JSONEncoderConfiguration,
         JSONEncoderConfiguration,
-    ) throws -> PreparedRequestBody
+    ) throws -> PreparedBody
 
     package init<Body: Sendable>(body: Body, encoding: BodyEncoding<Body>) {
         prepareValue = { clientConfiguration, endpointConfiguration in
@@ -149,7 +170,7 @@ package struct RequestBody: Sendable {
     package func prepare(
         clientJSONEncoderConfiguration: JSONEncoderConfiguration,
         endpointJSONEncoderConfiguration: JSONEncoderConfiguration,
-    ) throws -> PreparedRequestBody {
+    ) throws -> PreparedBody {
         try prepareValue(clientJSONEncoderConfiguration, endpointJSONEncoderConfiguration)
     }
 }

@@ -17,6 +17,7 @@ public struct Request<Output: Sendable>: Sendable {
     package let response: ResponseDecoding<Output>
     package let endpointHeaders: HTTPFields
     package let requestHeaders: HTTPFields
+    package let context: RequestContext
     package let body: RequestBody?
     package let jsonEncoderConfiguration: JSONEncoderConfiguration
     package let jsonDecoderConfiguration: JSONDecoderConfiguration
@@ -29,6 +30,7 @@ public struct Request<Output: Sendable>: Sendable {
         response: ResponseDecoding<Output>,
         endpointHeaders: HTTPFields,
         requestHeaders: HTTPFields = HTTPFields(),
+        context: RequestContext = RequestContext(),
         body: RequestBody? = nil,
         jsonEncoderConfiguration: @escaping JSONEncoderConfiguration = { _ in },
         jsonDecoderConfiguration: @escaping JSONDecoderConfiguration = { _ in },
@@ -40,6 +42,7 @@ public struct Request<Output: Sendable>: Sendable {
         self.response = response
         self.endpointHeaders = endpointHeaders
         self.requestHeaders = requestHeaders
+        self.context = context
         self.body = body
         self.jsonEncoderConfiguration = jsonEncoderConfiguration
         self.jsonDecoderConfiguration = jsonDecoderConfiguration
@@ -128,6 +131,33 @@ public struct Request<Output: Sendable>: Sendable {
         )
     }
 
+    /// Returns a copy carrying the supplied typed request context value.
+    ///
+    /// Setting a key that already has a value replaces that value while preserving other keys.
+    ///
+    /// - Parameters:
+    ///   - key: The type that identifies the context value.
+    ///   - value: The Sendable value to associate with the key.
+    /// - Returns: An immutable request copy carrying the updated context.
+    public func context<Key: RequestContextKey>(
+        _ key: Key.Type,
+        value: Key.Value,
+    ) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            requestQueryItems: requestQueryItems,
+            response: response,
+            endpointHeaders: endpointHeaders,
+            requestHeaders: requestHeaders,
+            context: context.setting(key, value: value),
+            body: body,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
+        )
+    }
+
     /// Returns a copy with invocation-specific query items in caller-supplied order.
     ///
     /// Items with a key matching a lower-precedence query layer replace all lower-layer values for
@@ -144,6 +174,7 @@ public struct Request<Output: Sendable>: Sendable {
             response: response,
             endpointHeaders: endpointHeaders,
             requestHeaders: requestHeaders,
+            context: context,
             body: body,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
@@ -166,6 +197,7 @@ public struct Request<Output: Sendable>: Sendable {
             response: response,
             endpointHeaders: endpointHeaders,
             requestHeaders: fields,
+            context: context,
             body: body,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
@@ -192,6 +224,7 @@ public struct Request<Output: Sendable>: Sendable {
             response: response,
             endpointHeaders: endpointHeaders,
             requestHeaders: fields,
+            context: context,
             body: body,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
