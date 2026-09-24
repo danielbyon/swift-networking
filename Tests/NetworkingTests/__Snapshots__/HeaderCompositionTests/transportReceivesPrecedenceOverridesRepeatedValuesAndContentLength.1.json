@@ -1,0 +1,38 @@
+[
+  {
+    "name" : "X-Layer",
+    "value" : "request"
+  },
+  {
+    "name" : "X-Repeated",
+    "value" : "request-first"
+  },
+  {
+    "name" : "X-Repeated",
+    "value" : "request-second"
+  },
+  {
+    "name" : "Content-Length",
+    "value" : "request-length"
+  },
+  {
+    "name" : "X-Client-Only",
+    "value" : "client-value"
+  },
+  {
+    "name" : "X-Endpoint-Overlay",
+    "value" : "endpoint-single"
+  },
+  {
+    "name" : "X-Endpoint-Only",
+    "value" : "captured"
+  },
+  {
+    "name" : "X-Request-Only",
+    "value" : "request-value"
+  },
+  {
+    "name" : "X-Added",
+    "value" : "added-value"
+  }
+]
