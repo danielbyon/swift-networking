@@ -1,0 +1,51 @@
+Sources/Networking/RequestContext.swift
+  s_84e9a6b7f181ed::t_3029e5524ab3a3 11,17
+  s_84e9a6b7f181ed::t_5c38bab8b36e60 1-10,12-16,18-56,58-66,73-82
+  s_84e9a6b7f181ed::t_de5d2abc87ede2 67
+  s_84e9a6b7f181ed::t_35be9f27ca4ddd 57,68-72
+Sources/Networking/RequestAdapter.swift
+  s_84e9a6b7f181ed::t_fc20fcb409a26e 1-14,16-54,56-74
+  s_84e9a6b7f181ed::t_76b7cf32af9308 15
+  s_84e9a6b7f181ed::t_35be9f27ca4ddd 55
+Tests/NetworkingTests/RequestContextTests.swift
+  s_84e9a6b7f181ed::t_85eb0052870c1c 61
+  s_84e9a6b7f181ed::t_46e4e05407d4a3 47,49
+  s_84e9a6b7f181ed::t_de5d2abc87ede2 20-21,35-36,46,59-60,63
+  s_84e9a6b7f181ed::t_4b732d08fe3864 1-19,22-34,37-45,48,50-58,62,64-96
+Sources/Networking/NetworkClient.swift
+  s_84e9a6b7f181ed::t_f4305d66a39960 91,234,258,279,298,352-358,360-362,470,500,564,602,604-608,610-617,619
+  s_84e9a6b7f181ed::t_35be9f27ca4ddd 359
+  s_84e9a6b7f181ed::t_5e33627b4462df 603,609,618
+Sources/Networking/BodyEncoding.swift
+  s_84e9a6b7f181ed::t_23cde246e08122 20,27,41,110-119,141-151,158,173
+  s_84e9a6b7f181ed::t_76b7cf32af9308 109
+Tests/NetworkingTests/RequestAdapterTests.swift
+  s_84e9a6b7f181ed::t_776ba61c974c8b 1-9,11-22,27-41,44-45,47-63,66-69,75-84,86-87,89-108,110-111,113-119,122-139,141-142,144-164,167-168,174,212-213,261-262,264-274,299-339
+  s_84e9a6b7f181ed::t_5e33627b4462df 10,175-211
+  s_84e9a6b7f181ed::t_cc20f3b785c1e4 23-26,42-43,64-65,85,88,109,112,140,143,165-166,216-217,240,243,259-260,263
+  s_84e9a6b7f181ed::t_16fc437176a153 46,70-74,169-173
+  s_84e9a6b7f181ed::t_38dc0c1fda0aec 120-121
+  s_84e9a6b7f181ed::t_94d834060ba020 214-215,218-239,241-242,244-258,275-298
+Tests/NetworkingTests/BodyEncodingAndResponseDecodingTests.swift
+  s_84e9a6b7f181ed::t_bef04e1a310631 37,142,450-455
+  s_84e9a6b7f181ed::t_d7d17c61dca547 170,281
+Sources/Networking/Request.swift
+  s_84e9a6b7f181ed::t_2851f58b059963 134-160,177,200,227
+  s_84e9a6b7f181ed::t_4263bf794b81e5 20,33,45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "691ad7ec69975bc9bdd3b1b615d80f6b870a0722",
+  "prompts": {},
+  "sessions": {
+    "s_84e9a6b7f181ed": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d47b-617e-7501-b7b7-8960578f88aa",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
