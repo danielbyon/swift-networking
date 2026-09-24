@@ -371,6 +371,7 @@ struct BodyEncodingAndResponseDecodingTests {
             route: .absolute(makeURL()),
             response: decoding,
         )
+        .validationPolicy(.custom(validate: { _ in .accept }))
 
         #expect(
             try await client.send(Request(endpoint: endpoint)).value == CustomOutput(byteCount: 2, statusCode: 200),

@@ -22,6 +22,9 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
     package let response: ResponseDecoding<Output>
     package let jsonEncoderConfiguration: JSONEncoderConfiguration
     package let jsonDecoderConfiguration: JSONDecoderConfiguration
+    package let responseValidationPolicy: ResponseValidationPolicy?
+    package let successfulResponseBodyRetentionPolicy: BodyRetentionPolicy?
+    package let validationErrorBodyRetentionPolicy: BodyRetentionPolicy?
     private let headerStorage: HeaderStorage
 
     private init(
@@ -32,6 +35,9 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
         response: ResponseDecoding<Output>,
         jsonEncoderConfiguration: @escaping JSONEncoderConfiguration = { _ in },
         jsonDecoderConfiguration: @escaping JSONDecoderConfiguration = { _ in },
+        responseValidationPolicy: ResponseValidationPolicy? = nil,
+        successfulResponseBodyRetentionPolicy: BodyRetentionPolicy? = nil,
+        validationErrorBodyRetentionPolicy: BodyRetentionPolicy? = nil,
         headerStorage: HeaderStorage = .fixed(HTTPFields()),
     ) {
         self.method = method
@@ -41,6 +47,9 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
         self.response = response
         self.jsonEncoderConfiguration = jsonEncoderConfiguration
         self.jsonDecoderConfiguration = jsonDecoderConfiguration
+        self.responseValidationPolicy = responseValidationPolicy
+        self.successfulResponseBodyRetentionPolicy = successfulResponseBodyRetentionPolicy
+        self.validationErrorBodyRetentionPolicy = validationErrorBodyRetentionPolicy
         self.headerStorage = headerStorage
     }
 
@@ -53,6 +62,9 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             response: response,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: responseValidationPolicy,
+            successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             headerStorage: headerStorage,
         )
     }
@@ -139,6 +151,9 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
                 configure(encoder)
             },
             jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: responseValidationPolicy,
+            successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             headerStorage: headerStorage,
         )
     }
@@ -163,6 +178,62 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
                 jsonDecoderConfiguration(decoder)
                 configure(decoder)
             },
+            responseValidationPolicy: responseValidationPolicy,
+            successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+            headerStorage: headerStorage,
+        )
+    }
+
+    /// Returns a copy with a replacement response-validation policy.
+    ///
+    /// The endpoint policy replaces the client policy for requests created from this endpoint.
+    public func validationPolicy(_ policy: ResponseValidationPolicy) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            bodyEncoding: bodyEncoding,
+            response: response,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: policy,
+            successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+            headerStorage: headerStorage,
+        )
+    }
+
+    /// Returns a copy with a replacement successful-response body-retention policy.
+    public func successfulResponseBodyRetentionPolicy(_ policy: BodyRetentionPolicy) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            bodyEncoding: bodyEncoding,
+            response: response,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: responseValidationPolicy,
+            successfulResponseBodyRetentionPolicy: policy,
+            validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+            headerStorage: headerStorage,
+        )
+    }
+
+    /// Returns a copy with a replacement validation-error body-retention policy.
+    public func validationErrorBodyRetentionPolicy(_ policy: BodyRetentionPolicy) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            bodyEncoding: bodyEncoding,
+            response: response,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: responseValidationPolicy,
+            successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: policy,
             headerStorage: headerStorage,
         )
     }

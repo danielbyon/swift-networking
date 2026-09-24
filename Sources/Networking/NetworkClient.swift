@@ -227,6 +227,15 @@ public final class NetworkClient: Sendable {
         /// The cache policy used by the foreground session, or nil to preserve Foundation's default.
         public let cachePolicy: URLRequest.CachePolicy?
 
+        /// The default policy used to validate each final transport response.
+        public let responseValidationPolicy: ResponseValidationPolicy
+
+        /// The default policy for retaining bodies of accepted responses.
+        public let successfulResponseBodyRetentionPolicy: BodyRetentionPolicy
+
+        /// The default policy for retaining bodies of rejected responses.
+        public let validationErrorBodyRetentionPolicy: BodyRetentionPolicy
+
         /// The HTTP/3 first-attempt preference for outgoing requests, or nil to preserve Foundation's value.
         public let assumesHTTP3Capable: Bool?
 
@@ -253,6 +262,9 @@ public final class NetworkClient: Sendable {
             allowsConstrainedNetworkAccess = nil
             allowsCellularAccess = nil
             cachePolicy = nil
+            responseValidationPolicy = .successfulStatusCodes
+            successfulResponseBodyRetentionPolicy = .none
+            validationErrorBodyRetentionPolicy = .unlimited
             assumesHTTP3Capable = nil
             requestIDGenerator = UUIDRequestIDGenerator()
             requestAdapters = []
@@ -274,6 +286,9 @@ public final class NetworkClient: Sendable {
             allowsConstrainedNetworkAccess: Bool?,
             allowsCellularAccess: Bool?,
             cachePolicy: URLRequest.CachePolicy?,
+            responseValidationPolicy: ResponseValidationPolicy,
+            successfulResponseBodyRetentionPolicy: BodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: BodyRetentionPolicy,
             assumesHTTP3Capable: Bool?,
             requestIDGenerator: any RequestIDGenerator,
             requestAdapters: [AnyRequestAdapter],
@@ -293,6 +308,9 @@ public final class NetworkClient: Sendable {
             self.allowsConstrainedNetworkAccess = allowsConstrainedNetworkAccess
             self.allowsCellularAccess = allowsCellularAccess
             self.cachePolicy = cachePolicy
+            self.responseValidationPolicy = responseValidationPolicy
+            self.successfulResponseBodyRetentionPolicy = successfulResponseBodyRetentionPolicy
+            self.validationErrorBodyRetentionPolicy = validationErrorBodyRetentionPolicy
             self.assumesHTTP3Capable = assumesHTTP3Capable
             self.requestIDGenerator = requestIDGenerator
             self.requestAdapters = requestAdapters
@@ -431,6 +449,21 @@ public final class NetworkClient: Sendable {
             copying(cachePolicy: .set(cachePolicy))
         }
 
+        /// Returns a copy with a replacement response-validation policy.
+        public func withResponseValidationPolicy(_ policy: ResponseValidationPolicy) -> Self {
+            copying(responseValidationPolicy: .set(policy))
+        }
+
+        /// Returns a copy with a replacement accepted-response body-retention policy.
+        public func withSuccessfulResponseBodyRetentionPolicy(_ policy: BodyRetentionPolicy) -> Self {
+            copying(successfulResponseBodyRetentionPolicy: .set(policy))
+        }
+
+        /// Returns a copy with a replacement validation-error body-retention policy.
+        public func withValidationErrorBodyRetentionPolicy(_ policy: BodyRetentionPolicy) -> Self {
+            copying(validationErrorBodyRetentionPolicy: .set(policy))
+        }
+
         /// Returns a copy with the supplied HTTP/3 first-attempt preference.
         ///
         /// A nil value leaves Foundation's generated URLRequest preference unchanged.
@@ -465,6 +498,15 @@ public final class NetworkClient: Sendable {
                 .unchanged,
             allowsCellularAccess allowsCellularAccessUpdate: ConfigurationFieldUpdate<Bool?> = .unchanged,
             cachePolicy cachePolicyUpdate: ConfigurationFieldUpdate<URLRequest.CachePolicy?> = .unchanged,
+            responseValidationPolicy responseValidationPolicyUpdate: ConfigurationFieldUpdate<
+                ResponseValidationPolicy,
+            > = .unchanged,
+            successfulResponseBodyRetentionPolicy successfulResponseBodyRetentionPolicyUpdate: ConfigurationFieldUpdate<
+                BodyRetentionPolicy,
+            > = .unchanged,
+            validationErrorBodyRetentionPolicy validationErrorBodyRetentionPolicyUpdate: ConfigurationFieldUpdate<
+                BodyRetentionPolicy,
+            > = .unchanged,
             assumesHTTP3Capable assumesHTTP3CapableUpdate: ConfigurationFieldUpdate<Bool?> = .unchanged,
             requestIDGenerator requestIDGeneratorUpdate: ConfigurationFieldUpdate<any RequestIDGenerator> = .unchanged,
             requestAdapters requestAdaptersUpdate: ConfigurationFieldUpdate<[AnyRequestAdapter]> = .unchanged,
@@ -495,6 +537,13 @@ public final class NetworkClient: Sendable {
                 ),
                 allowsCellularAccess: allowsCellularAccessUpdate.applying(to: allowsCellularAccess),
                 cachePolicy: cachePolicyUpdate.applying(to: cachePolicy),
+                responseValidationPolicy: responseValidationPolicyUpdate.applying(to: responseValidationPolicy),
+                successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicyUpdate.applying(
+                    to: successfulResponseBodyRetentionPolicy,
+                ),
+                validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicyUpdate.applying(
+                    to: validationErrorBodyRetentionPolicy,
+                ),
                 assumesHTTP3Capable: assumesHTTP3CapableUpdate.applying(to: assumesHTTP3Capable),
                 requestIDGenerator: requestIDGeneratorUpdate.applying(to: requestIDGenerator),
                 requestAdapters: requestAdaptersUpdate.applying(to: requestAdapters),
@@ -561,6 +610,9 @@ public final class NetworkClient: Sendable {
         let clientEncoderConfiguration = configuration.urlQueryEncoderConfiguration
         let clientJSONEncoderConfiguration = configuration.jsonEncoderConfiguration
         let clientJSONDecoderConfiguration = configuration.jsonDecoderConfiguration
+        let clientResponseValidationPolicy = configuration.responseValidationPolicy
+        let clientSuccessfulResponseBodyRetentionPolicy = configuration.successfulResponseBodyRetentionPolicy
+        let clientValidationErrorBodyRetentionPolicy = configuration.validationErrorBodyRetentionPolicy
         let requestAdapters = configuration.requestAdapters
         let routeKind: QueryRouteKind =
             switch request.route {
@@ -618,13 +670,41 @@ public final class NetworkClient: Sendable {
                 body: bodyInspection,
             )
             let (data, httpResponse) = try await networkTransport.execute(transportRequest)
+            let validationContext = ResponseValidationContext(
+                httpResponse: httpResponse,
+                receivedBody: .data(data),
+                requestID: requestID,
+                requestContext: request.context,
+            )
+            let validationPolicy = request.responseValidationPolicy ?? clientResponseValidationPolicy
+            switch validationPolicy.validate(validationContext) {
+            case .accept:
+                break
+            case let .reject(reason):
+                let retentionPolicy = request.validationErrorBodyRetentionPolicy
+                    ?? clientValidationErrorBodyRetentionPolicy
+                throw ResponseValidationError(
+                    httpResponse: httpResponse,
+                    retainedBody: retentionPolicy.retain(data),
+                    requestID: requestID,
+                    reason: reason,
+                )
+            }
+
             let value = try request.response.decode(
                 data,
                 response: httpResponse,
                 clientJSONDecoderConfiguration: clientJSONDecoderConfiguration,
                 endpointJSONDecoderConfiguration: request.jsonDecoderConfiguration,
             )
-            return Response(value: value, httpResponse: httpResponse, requestID: requestID)
+            let retentionPolicy = request.successfulResponseBodyRetentionPolicy
+                ?? clientSuccessfulResponseBodyRetentionPolicy
+            return Response(
+                value: value,
+                httpResponse: httpResponse,
+                requestID: requestID,
+                retainedBody: retentionPolicy.retain(data),
+            )
         }
     }
 

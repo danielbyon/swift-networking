@@ -21,6 +21,9 @@ public struct Request<Output: Sendable>: Sendable {
     package let body: RequestBody?
     package let jsonEncoderConfiguration: JSONEncoderConfiguration
     package let jsonDecoderConfiguration: JSONDecoderConfiguration
+    package let responseValidationPolicy: ResponseValidationPolicy?
+    package let successfulResponseBodyRetentionPolicy: BodyRetentionPolicy?
+    package let validationErrorBodyRetentionPolicy: BodyRetentionPolicy?
 
     private init(
         method: HTTPRequest.Method,
@@ -34,6 +37,9 @@ public struct Request<Output: Sendable>: Sendable {
         body: RequestBody? = nil,
         jsonEncoderConfiguration: @escaping JSONEncoderConfiguration = { _ in },
         jsonDecoderConfiguration: @escaping JSONDecoderConfiguration = { _ in },
+        responseValidationPolicy: ResponseValidationPolicy? = nil,
+        successfulResponseBodyRetentionPolicy: BodyRetentionPolicy? = nil,
+        validationErrorBodyRetentionPolicy: BodyRetentionPolicy? = nil,
     ) {
         self.method = method
         self.route = route
@@ -46,6 +52,9 @@ public struct Request<Output: Sendable>: Sendable {
         self.body = body
         self.jsonEncoderConfiguration = jsonEncoderConfiguration
         self.jsonDecoderConfiguration = jsonDecoderConfiguration
+        self.responseValidationPolicy = responseValidationPolicy
+        self.successfulResponseBodyRetentionPolicy = successfulResponseBodyRetentionPolicy
+        self.validationErrorBodyRetentionPolicy = validationErrorBodyRetentionPolicy
     }
 
     /// Binds endpoint input to a bodyless endpoint and resolves its route.
@@ -63,6 +72,9 @@ public struct Request<Output: Sendable>: Sendable {
             endpointHeaders: endpoint.resolveHeaders(input: input),
             jsonEncoderConfiguration: endpoint.jsonEncoderConfiguration,
             jsonDecoderConfiguration: endpoint.jsonDecoderConfiguration,
+            responseValidationPolicy: endpoint.responseValidationPolicy,
+            successfulResponseBodyRetentionPolicy: endpoint.successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: endpoint.validationErrorBodyRetentionPolicy,
         )
     }
 
@@ -79,6 +91,9 @@ public struct Request<Output: Sendable>: Sendable {
             endpointHeaders: endpoint.constantHeaders,
             jsonEncoderConfiguration: endpoint.jsonEncoderConfiguration,
             jsonDecoderConfiguration: endpoint.jsonDecoderConfiguration,
+            responseValidationPolicy: endpoint.responseValidationPolicy,
+            successfulResponseBodyRetentionPolicy: endpoint.successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: endpoint.validationErrorBodyRetentionPolicy,
         )
     }
 
@@ -106,6 +121,9 @@ public struct Request<Output: Sendable>: Sendable {
             body: RequestBody(body: body, encoding: endpoint.bodyEncoding),
             jsonEncoderConfiguration: endpoint.jsonEncoderConfiguration,
             jsonDecoderConfiguration: endpoint.jsonDecoderConfiguration,
+            responseValidationPolicy: endpoint.responseValidationPolicy,
+            successfulResponseBodyRetentionPolicy: endpoint.successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: endpoint.validationErrorBodyRetentionPolicy,
         )
     }
 
@@ -128,6 +146,9 @@ public struct Request<Output: Sendable>: Sendable {
             body: RequestBody(body: body, encoding: endpoint.bodyEncoding),
             jsonEncoderConfiguration: endpoint.jsonEncoderConfiguration,
             jsonDecoderConfiguration: endpoint.jsonDecoderConfiguration,
+            responseValidationPolicy: endpoint.responseValidationPolicy,
+            successfulResponseBodyRetentionPolicy: endpoint.successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: endpoint.validationErrorBodyRetentionPolicy,
         )
     }
 
@@ -155,6 +176,9 @@ public struct Request<Output: Sendable>: Sendable {
             body: body,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: responseValidationPolicy,
+            successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
         )
     }
 
@@ -178,6 +202,9 @@ public struct Request<Output: Sendable>: Sendable {
             body: body,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: responseValidationPolicy,
+            successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
         )
     }
 
@@ -201,6 +228,9 @@ public struct Request<Output: Sendable>: Sendable {
             body: body,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: responseValidationPolicy,
+            successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
         )
     }
 
@@ -228,6 +258,69 @@ public struct Request<Output: Sendable>: Sendable {
             body: body,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: responseValidationPolicy,
+            successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+        )
+    }
+
+    /// Returns a copy with a replacement response-validation policy.
+    public func validationPolicy(_ policy: ResponseValidationPolicy) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            requestQueryItems: requestQueryItems,
+            response: response,
+            endpointHeaders: endpointHeaders,
+            requestHeaders: requestHeaders,
+            context: context,
+            body: body,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: policy,
+            successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+        )
+    }
+
+    /// Returns a copy with a replacement successful-response body-retention policy.
+    public func successfulResponseBodyRetentionPolicy(_ policy: BodyRetentionPolicy) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            requestQueryItems: requestQueryItems,
+            response: response,
+            endpointHeaders: endpointHeaders,
+            requestHeaders: requestHeaders,
+            context: context,
+            body: body,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: responseValidationPolicy,
+            successfulResponseBodyRetentionPolicy: policy,
+            validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+        )
+    }
+
+    /// Returns a copy with a replacement validation-error body-retention policy.
+    public func validationErrorBodyRetentionPolicy(_ policy: BodyRetentionPolicy) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            requestQueryItems: requestQueryItems,
+            response: response,
+            endpointHeaders: endpointHeaders,
+            requestHeaders: requestHeaders,
+            context: context,
+            body: body,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: responseValidationPolicy,
+            successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: policy,
         )
     }
 }
