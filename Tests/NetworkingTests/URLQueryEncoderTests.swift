@@ -19,7 +19,7 @@ struct URLQueryEncoderTests {
             omitted: nil,
             empty: "",
             enabled: true,
-            timestamp: Date(timeIntervalSince1970: 1_234.5),
+            timestamp: Date(timeIntervalSince1970: 1_234),
             values: [2, 1],
         )
 
@@ -268,6 +268,23 @@ struct URLQueryEncoderTests {
     }
 
     @Test
+    func codingKeyRepresentableDictionaryRejectsCollidingQueryKeys() {
+        let values: [CollidingQueryDictionaryKey: String] = [
+            .first: "one",
+            .second: "two",
+        ]
+
+        do {
+            _ = try URLQueryEncoder().encode(values)
+            Issue.record("Expected dictionary keys with the same coding key to fail")
+        } catch let error as URLQueryEncodingError {
+            #expect(error == .unorderedCollection(codingPath: []))
+        } catch {
+            Issue.record("Unexpected colliding dictionary key error: \(error)")
+        }
+    }
+
+    @Test
     func nestedUnsupportedSingleValueFailsAtItsCodingPath() {
         do {
             _ = try URLQueryEncoder().encode(
@@ -386,6 +403,27 @@ private struct CatchingUnorderedArrayElementQuery: Encodable {
 private enum QueryDictionaryKey: String, Encodable, CodingKeyRepresentable {
     case alpha
     case zulu
+}
+
+private enum CollidingQueryDictionaryKey: String, Encodable, CodingKeyRepresentable {
+    case first
+    case second
+
+    var codingKey: any CodingKey {
+        CollidingQueryCodingKey.shared
+    }
+
+    init?(codingKey: some CodingKey) {
+        guard codingKey.stringValue == "shared" else {
+            return nil
+        }
+
+        self = .first
+    }
+}
+
+private enum CollidingQueryCodingKey: String, CodingKey {
+    case shared
 }
 
 private struct CatchingUnsupportedSingleValueQuery: Encodable {

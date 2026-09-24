@@ -26,20 +26,37 @@ public enum URLQueryEncodingError: Error, Sendable, Equatable {
 }
 
 private protocol QueryCollectionEncodingPolicy {
-    static var requiresUnorderedQueryRejection: Bool { get }
+    static func requiresUnorderedQueryRejection(for value: any Encodable) -> Bool
 }
 
 extension Set: QueryCollectionEncodingPolicy {
-    fileprivate static var requiresUnorderedQueryRejection: Bool {
+    fileprivate static func requiresUnorderedQueryRejection(for _: any Encodable) -> Bool {
         true
     }
 }
 
 extension Dictionary: QueryCollectionEncodingPolicy {
-    fileprivate static var requiresUnorderedQueryRejection: Bool {
-        Key.self != String.self
-            && Key.self != Int.self
-            && !(Key.self is any CodingKeyRepresentable.Type)
+    fileprivate static func requiresUnorderedQueryRejection(for value: any Encodable) -> Bool {
+        guard Key.self != String.self, Key.self != Int.self else {
+            return false
+        }
+        guard Key.self is any CodingKeyRepresentable.Type else {
+            return true
+        }
+        guard let dictionary = value as? Self else {
+            return true
+        }
+
+        var codingKeyNames = Set<String>()
+        for dictionaryKey in dictionary.keys {
+            guard let codingKey = dictionaryKey as? any CodingKeyRepresentable,
+                  codingKeyNames.insert(codingKey.codingKey.stringValue).inserted
+            else {
+                return true
+            }
+        }
+
+        return false
     }
 }
 
@@ -48,7 +65,7 @@ private func requiresUnorderedQueryRejection(_ value: any Encodable) -> Bool {
         return false
     }
 
-    return policy.requiresUnorderedQueryRejection
+    return policy.requiresUnorderedQueryRejection(for: value)
 }
 
 /// Encodes a limited Codable value into ordered URL query items.

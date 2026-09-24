@@ -412,6 +412,9 @@ Defaults:
 
 Array fields preserve the source order of their elements. `Set` values and dictionaries whose Codable
 representation is unkeyed are rejected rather than serialized in unspecified iteration order.
+`CodingKeyRepresentable` dictionaries are encoded as keyed values, but are rejected when distinct keys
+map to the same `codingKey.stringValue`, since their values would otherwise follow unspecified
+dictionary iteration order.
 
 Array strategies:
 
@@ -442,10 +445,12 @@ Date strategies include at minimum:
 
 Default: iso8601.
 
-Top-level unkeyed containers and nested keyed or nested unkeyed containers are unsupported, even
-when they contain no values. An empty first-level array field is valid and emits no query items.
-Unsupported nested single values throw `URLQueryEncodingError.unsupportedSingleValue(codingPath:)`.
-Known unordered collections throw `URLQueryEncodingError.unorderedCollection(codingPath:)`.
+Top-level unkeyed containers throw `URLQueryEncodingError.topLevelContainerUnsupported`. Nested keyed
+and nested unkeyed containers throw `URLQueryEncodingError.nestedKeyedContainer(codingPath:)` and
+`URLQueryEncodingError.nestedUnkeyedContainer(codingPath:)`, even when they contain no values. An
+empty first-level array field is valid and emits no query items. Unsupported nested single values throw
+`URLQueryEncodingError.unsupportedSingleValue(codingPath:)`. Known unordered collections throw
+`URLQueryEncodingError.unorderedCollection(codingPath:)`.
 
 ### 8.3 Selection from input
 
