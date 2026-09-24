@@ -13,32 +13,118 @@ package protocol NetworkTransport: Sendable {
     func execute(_ request: HTTPRequest) async throws -> (Data, HTTPResponse)
 }
 
-/// Creates the foreground session configuration with Networking's ambient stores disabled.
-package func makeForegroundURLSessionConfiguration() -> URLSessionConfiguration {
+/// Creates a foreground session configuration using the client's policy defaults.
+///
+/// URL cache and cookie storage use the client values, while credential storage remains disabled.
+/// Unspecified session options retain Foundation's defaults.
+package func makeForegroundURLSessionConfiguration(
+    configuration clientConfiguration: NetworkClient.Configuration = .init(),
+) -> URLSessionConfiguration {
     let configuration = URLSessionConfiguration.default
-    configuration.urlCache = nil
-    configuration.httpCookieStorage = nil
+    configuration.urlCache = clientConfiguration.urlCache
+    configuration.httpCookieStorage = clientConfiguration.httpCookieStorage
     configuration.urlCredentialStorage = nil
+
+    if let requestTimeout = clientConfiguration.requestTimeout {
+        configuration.timeoutIntervalForRequest = durationTimeInterval(requestTimeout)
+    }
+    if let resourceTimeout = clientConfiguration.resourceTimeout {
+        configuration.timeoutIntervalForResource = durationTimeInterval(resourceTimeout)
+    }
+    if let waitsForConnectivity = clientConfiguration.waitsForConnectivity {
+        configuration.waitsForConnectivity = waitsForConnectivity
+    }
+    if let allowsExpensiveNetworkAccess = clientConfiguration.allowsExpensiveNetworkAccess {
+        configuration.allowsExpensiveNetworkAccess = allowsExpensiveNetworkAccess
+    }
+    if let allowsConstrainedNetworkAccess = clientConfiguration.allowsConstrainedNetworkAccess {
+        configuration.allowsConstrainedNetworkAccess = allowsConstrainedNetworkAccess
+    }
+    if let allowsCellularAccess = clientConfiguration.allowsCellularAccess {
+        configuration.allowsCellularAccess = allowsCellularAccess
+    }
+    if let cachePolicy = clientConfiguration.cachePolicy {
+        configuration.requestCachePolicy = cachePolicy
+    }
+
     return configuration
+}
+
+/// Converts an HTTP request into the Foundation request sent by URLSession.
+///
+/// - Parameters:
+///   - request: The finalized HTTP request produced by client routing and composition.
+///   - assumesHTTP3Capable: The optional client preference to apply to the first attempt.
+/// - Returns: The Foundation request, or nil when it cannot represent the HTTP request.
+package func makeURLRequest(
+    _ request: HTTPRequest,
+    assumesHTTP3Capable: Bool?,
+) -> URLRequest? {
+    guard var urlRequest = URLRequest(httpRequest: request) else {
+        return nil
+    }
+
+    if let assumesHTTP3Capable {
+        urlRequest.assumesHTTP3Capable = assumesHTTP3Capable
+    }
+
+    return urlRequest
+}
+
+/// Converts a positive Swift duration into Foundation's seconds-based timeout value.
+private func durationTimeInterval(_ duration: Duration) -> TimeInterval {
+    let components = duration.components
+    return Double(components.seconds) + Double(components.attoseconds) / 1_000_000_000_000_000_000
 }
 
 private struct URLSessionTransport: NetworkTransport {
     private let session: URLSession
+    private let assumesHTTP3Capable: Bool?
 
-    init() {
-        session = URLSession(configuration: makeForegroundURLSessionConfiguration())
+    init(configuration: NetworkClient.Configuration) {
+        session = URLSession(
+            configuration: makeForegroundURLSessionConfiguration(configuration: configuration),
+        )
+        assumesHTTP3Capable = configuration.assumesHTTP3Capable
     }
 
     func execute(_ request: HTTPRequest) async throws -> (Data, HTTPResponse) {
-        try await session.data(for: request)
+        guard let urlRequest = makeURLRequest(
+            request,
+            assumesHTTP3Capable: assumesHTTP3Capable,
+        ) else {
+            throw URLError(.badURL)
+        }
+
+        let (data, urlResponse) = try await session.data(for: urlRequest)
+        guard let response = (urlResponse as? HTTPURLResponse)?.httpResponse else {
+            throw URLError(.badServerResponse)
+        }
+
+        return (data, response)
+    }
+}
+
+/// Selects whether an immutable configuration field keeps its current value or receives a replacement.
+private enum ConfigurationFieldUpdate<Value> {
+    case unchanged
+    case set(Value)
+
+    func applying(to currentValue: Value) -> Value {
+        switch self {
+        case .unchanged:
+            currentValue
+        case let .set(value):
+            value
+        }
     }
 }
 
 /// An immutable execution environment that owns its foreground URL session.
 public final class NetworkClient: Sendable {
-    /// Describes every invalid base URL setting discovered during client initialization.
+    /// Describes every invalid base URL or timeout setting discovered during client initialization.
     public struct ConfigurationError: Error, Sendable, Equatable {
-        /// Identifies the base URL rule that failed validation.
+        /// Identifies a base URL rule or timeout policy that failed validation.
         public enum Failure: Sendable, Equatable {
             /// The base URL does not use the HTTP or HTTPS scheme.
             case baseURLScheme
@@ -48,9 +134,15 @@ public final class NetworkClient: Sendable {
 
             /// The base URL contains a fragment component.
             case baseURLFragment
+
+            /// The client request timeout is zero or negative.
+            case requestTimeout
+
+            /// The client resource timeout is zero or negative.
+            case resourceTimeout
         }
 
-        /// The failures in stable scheme, query, fragment order.
+        /// The failures in stable base URL, request timeout, resource timeout order.
         public let failures: [Failure]
 
         package init(failures: [Failure]) {
@@ -72,6 +164,40 @@ public final class NetworkClient: Sendable {
         /// Client-wide defaults for Codable query serialization.
         public let urlQueryEncoderConfiguration: URLQueryEncoder.Configuration
 
+        /// The URL cache used by the foreground session. A nil value disables URL caching.
+        public let urlCache: URLCache?
+
+        /// The cookie storage used by the foreground session. A nil value disables cookie storage.
+        public let httpCookieStorage: HTTPCookieStorage?
+
+        /// The client-wide request timeout, or nil to preserve Foundation's default.
+        ///
+        /// An explicit value must be greater than zero when a client is created.
+        public let requestTimeout: Duration?
+
+        /// The client-wide resource timeout, or nil to preserve Foundation's default.
+        ///
+        /// An explicit value must be greater than zero when a client is created.
+        public let resourceTimeout: Duration?
+
+        /// Whether the foreground session waits for connectivity, or nil to preserve its default.
+        public let waitsForConnectivity: Bool?
+
+        /// Whether the foreground session may use expensive networks, or nil to preserve its default.
+        public let allowsExpensiveNetworkAccess: Bool?
+
+        /// Whether the foreground session may use constrained networks, or nil to preserve its default.
+        public let allowsConstrainedNetworkAccess: Bool?
+
+        /// Whether the foreground session may use cellular networks, or nil to preserve its default.
+        public let allowsCellularAccess: Bool?
+
+        /// The cache policy used by the foreground session, or nil to preserve Foundation's default.
+        public let cachePolicy: URLRequest.CachePolicy?
+
+        /// The HTTP/3 first-attempt preference for outgoing requests, or nil to preserve Foundation's value.
+        public let assumesHTTP3Capable: Bool?
+
         package let requestIDGenerator: any RequestIDGenerator
 
         /// Creates client configuration with an optional base URL.
@@ -83,6 +209,16 @@ public final class NetworkClient: Sendable {
             defaultHeaders = HTTPFields()
             defaultQueryItems = []
             urlQueryEncoderConfiguration = .init()
+            urlCache = nil
+            httpCookieStorage = nil
+            requestTimeout = nil
+            resourceTimeout = nil
+            waitsForConnectivity = nil
+            allowsExpensiveNetworkAccess = nil
+            allowsConstrainedNetworkAccess = nil
+            allowsCellularAccess = nil
+            cachePolicy = nil
+            assumesHTTP3Capable = nil
             requestIDGenerator = UUIDRequestIDGenerator()
         }
 
@@ -91,12 +227,32 @@ public final class NetworkClient: Sendable {
             defaultHeaders: HTTPFields,
             defaultQueryItems: [URLQueryItem],
             urlQueryEncoderConfiguration: URLQueryEncoder.Configuration,
+            urlCache: URLCache?,
+            httpCookieStorage: HTTPCookieStorage?,
+            requestTimeout: Duration?,
+            resourceTimeout: Duration?,
+            waitsForConnectivity: Bool?,
+            allowsExpensiveNetworkAccess: Bool?,
+            allowsConstrainedNetworkAccess: Bool?,
+            allowsCellularAccess: Bool?,
+            cachePolicy: URLRequest.CachePolicy?,
+            assumesHTTP3Capable: Bool?,
             requestIDGenerator: any RequestIDGenerator,
         ) {
             self.baseURL = baseURL
             self.defaultHeaders = defaultHeaders
             self.defaultQueryItems = defaultQueryItems
             self.urlQueryEncoderConfiguration = urlQueryEncoderConfiguration
+            self.urlCache = urlCache
+            self.httpCookieStorage = httpCookieStorage
+            self.requestTimeout = requestTimeout
+            self.resourceTimeout = resourceTimeout
+            self.waitsForConnectivity = waitsForConnectivity
+            self.allowsExpensiveNetworkAccess = allowsExpensiveNetworkAccess
+            self.allowsConstrainedNetworkAccess = allowsConstrainedNetworkAccess
+            self.allowsCellularAccess = allowsCellularAccess
+            self.cachePolicy = cachePolicy
+            self.assumesHTTP3Capable = assumesHTTP3Capable
             self.requestIDGenerator = requestIDGenerator
         }
 
@@ -105,13 +261,7 @@ public final class NetworkClient: Sendable {
         /// - Parameter queryItems: The static client query items in caller-supplied order.
         /// - Returns: A configuration with the replacement default query layer.
         public func withDefaultQueryItems(_ queryItems: [URLQueryItem]) -> Self {
-            Self(
-                baseURL: baseURL,
-                defaultHeaders: defaultHeaders,
-                defaultQueryItems: queryItems,
-                urlQueryEncoderConfiguration: urlQueryEncoderConfiguration,
-                requestIDGenerator: requestIDGenerator,
-            )
+            copying(defaultQueryItems: .set(queryItems))
         }
 
         /// Returns a copy with replacement client-wide Codable query encoder defaults.
@@ -121,13 +271,7 @@ public final class NetworkClient: Sendable {
         public func withURLQueryEncoderConfiguration(
             _ configuration: URLQueryEncoder.Configuration,
         ) -> Self {
-            Self(
-                baseURL: baseURL,
-                defaultHeaders: defaultHeaders,
-                defaultQueryItems: defaultQueryItems,
-                urlQueryEncoderConfiguration: configuration,
-                requestIDGenerator: requestIDGenerator,
-            )
+            copying(urlQueryEncoderConfiguration: .set(configuration))
         }
 
         /// Returns a copy that uses the supplied logical-execution identity generator.
@@ -136,13 +280,7 @@ public final class NetworkClient: Sendable {
         ///   logical executions created by the client.
         /// - Returns: A configuration with the replacement generator.
         public func withRequestIDGenerator(_ generator: any RequestIDGenerator) -> Self {
-            Self(
-                baseURL: baseURL,
-                defaultHeaders: defaultHeaders,
-                defaultQueryItems: defaultQueryItems,
-                urlQueryEncoderConfiguration: urlQueryEncoderConfiguration,
-                requestIDGenerator: generator,
-            )
+            copying(requestIDGenerator: .set(generator))
         }
 
         /// Returns a copy with replacement client-wide default HTTP fields.
@@ -150,12 +288,122 @@ public final class NetworkClient: Sendable {
         /// - Parameter fields: The client defaults in caller-supplied order.
         /// - Returns: A configuration with the replacement client header layer.
         public func withDefaultHeaders(_ fields: HTTPFields) -> Self {
+            copying(defaultHeaders: .set(fields))
+        }
+
+        /// Returns a copy using the supplied URL cache.
+        ///
+        /// A nil cache disables URL caching.
+        public func withURLCache(_ urlCache: URLCache?) -> Self {
+            copying(urlCache: .set(urlCache))
+        }
+
+        /// Returns a copy using the supplied cookie storage.
+        ///
+        /// A nil storage disables cookie storage.
+        public func withHTTPCookieStorage(_ httpCookieStorage: HTTPCookieStorage?) -> Self {
+            copying(httpCookieStorage: .set(httpCookieStorage))
+        }
+
+        /// Returns a copy using the supplied client request timeout.
+        ///
+        /// A nil timeout preserves Foundation's default. An explicit timeout must be greater than zero.
+        public func withRequestTimeout(_ requestTimeout: Duration?) -> Self {
+            copying(requestTimeout: .set(requestTimeout))
+        }
+
+        /// Returns a copy using the supplied client resource timeout.
+        ///
+        /// A nil timeout preserves Foundation's default. An explicit timeout must be greater than zero.
+        public func withResourceTimeout(_ resourceTimeout: Duration?) -> Self {
+            copying(resourceTimeout: .set(resourceTimeout))
+        }
+
+        /// Returns a copy with the supplied waits-for-connectivity setting.
+        ///
+        /// A nil value preserves Foundation's default.
+        public func withWaitsForConnectivity(_ waitsForConnectivity: Bool?) -> Self {
+            copying(waitsForConnectivity: .set(waitsForConnectivity))
+        }
+
+        /// Returns a copy with the supplied expensive-network access setting.
+        ///
+        /// A nil value preserves Foundation's default.
+        public func withAllowsExpensiveNetworkAccess(_ allowsExpensiveNetworkAccess: Bool?) -> Self {
+            copying(allowsExpensiveNetworkAccess: .set(allowsExpensiveNetworkAccess))
+        }
+
+        /// Returns a copy with the supplied constrained-network access setting.
+        ///
+        /// A nil value preserves Foundation's default.
+        public func withAllowsConstrainedNetworkAccess(_ allowsConstrainedNetworkAccess: Bool?) -> Self {
+            copying(allowsConstrainedNetworkAccess: .set(allowsConstrainedNetworkAccess))
+        }
+
+        /// Returns a copy with the supplied cellular-network access setting.
+        ///
+        /// A nil value preserves Foundation's default.
+        public func withAllowsCellularAccess(_ allowsCellularAccess: Bool?) -> Self {
+            copying(allowsCellularAccess: .set(allowsCellularAccess))
+        }
+
+        /// Returns a copy with the supplied Foundation request cache policy.
+        ///
+        /// A nil policy preserves Foundation's default.
+        public func withCachePolicy(_ cachePolicy: URLRequest.CachePolicy?) -> Self {
+            copying(cachePolicy: .set(cachePolicy))
+        }
+
+        /// Returns a copy with the supplied HTTP/3 first-attempt preference.
+        ///
+        /// A nil value leaves Foundation's generated URLRequest preference unchanged.
+        public func withAssumesHTTP3Capable(_ assumesHTTP3Capable: Bool?) -> Self {
+            copying(assumesHTTP3Capable: .set(assumesHTTP3Capable))
+        }
+
+        /// Returns an immutable copy with selected fields replaced.
+        ///
+        /// Fields marked unchanged keep their current values. A set update replaces the field,
+        /// including when the replacement value is nil.
+        private func copying(
+            baseURL: ConfigurationFieldUpdate<URL?> = .unchanged,
+            defaultHeaders: ConfigurationFieldUpdate<HTTPFields> = .unchanged,
+            defaultQueryItems: ConfigurationFieldUpdate<[URLQueryItem]> = .unchanged,
+            urlQueryEncoderConfiguration: ConfigurationFieldUpdate<URLQueryEncoder.Configuration> = .unchanged,
+            urlCache: ConfigurationFieldUpdate<URLCache?> = .unchanged,
+            httpCookieStorage: ConfigurationFieldUpdate<HTTPCookieStorage?> = .unchanged,
+            requestTimeout: ConfigurationFieldUpdate<Duration?> = .unchanged,
+            resourceTimeout: ConfigurationFieldUpdate<Duration?> = .unchanged,
+            waitsForConnectivity: ConfigurationFieldUpdate<Bool?> = .unchanged,
+            allowsExpensiveNetworkAccess: ConfigurationFieldUpdate<Bool?> = .unchanged,
+            allowsConstrainedNetworkAccess: ConfigurationFieldUpdate<Bool?> = .unchanged,
+            allowsCellularAccess: ConfigurationFieldUpdate<Bool?> = .unchanged,
+            cachePolicy: ConfigurationFieldUpdate<URLRequest.CachePolicy?> = .unchanged,
+            assumesHTTP3Capable: ConfigurationFieldUpdate<Bool?> = .unchanged,
+            requestIDGenerator: ConfigurationFieldUpdate<any RequestIDGenerator> = .unchanged,
+        ) -> Self {
             Self(
-                baseURL: baseURL,
-                defaultHeaders: fields,
-                defaultQueryItems: defaultQueryItems,
-                urlQueryEncoderConfiguration: urlQueryEncoderConfiguration,
-                requestIDGenerator: requestIDGenerator,
+                baseURL: baseURL.applying(to: self.baseURL),
+                defaultHeaders: defaultHeaders.applying(to: self.defaultHeaders),
+                defaultQueryItems: defaultQueryItems.applying(to: self.defaultQueryItems),
+                urlQueryEncoderConfiguration: urlQueryEncoderConfiguration.applying(
+                    to: self.urlQueryEncoderConfiguration,
+                ),
+                urlCache: urlCache.applying(to: self.urlCache),
+                httpCookieStorage: httpCookieStorage.applying(to: self.httpCookieStorage),
+                requestTimeout: requestTimeout.applying(to: self.requestTimeout),
+                resourceTimeout: resourceTimeout.applying(to: self.resourceTimeout),
+                waitsForConnectivity: waitsForConnectivity.applying(to: self.waitsForConnectivity),
+                allowsExpensiveNetworkAccess: allowsExpensiveNetworkAccess.applying(
+                    to: self.allowsExpensiveNetworkAccess,
+                ),
+                allowsConstrainedNetworkAccess: allowsConstrainedNetworkAccess.applying(
+                    to: self.allowsConstrainedNetworkAccess,
+                ),
+                allowsCellularAccess: allowsCellularAccess.applying(to: self.allowsCellularAccess),
+                cachePolicy: cachePolicy.applying(to: self.cachePolicy),
+                assumesHTTP3Capable: assumesHTTP3Capable.applying(to: self.assumesHTTP3Capable),
+                requestIDGenerator: requestIDGenerator.applying(to: self.requestIDGenerator),
             )
         }
     }
@@ -165,7 +413,16 @@ public final class NetworkClient: Sendable {
 
     /// Creates a client that owns a foreground URL session for its requests.
     public convenience init() {
-        self.init(validatedTransport: URLSessionTransport(), configuration: .init())
+        let configuration = Configuration()
+        do {
+            try Self.validate(configuration)
+        } catch {
+            preconditionFailure("The default NetworkClient configuration must be valid.")
+        }
+        self.init(
+            validatedTransport: URLSessionTransport(configuration: configuration),
+            configuration: configuration,
+        )
     }
 
     /// Creates a client from an immutable configuration and its owned foreground URL session.
@@ -173,7 +430,10 @@ public final class NetworkClient: Sendable {
     /// - Parameter configuration: The configuration used for logical request executions.
     public convenience init(configuration: Configuration) throws {
         try Self.validate(configuration)
-        self.init(validatedTransport: URLSessionTransport(), configuration: configuration)
+        self.init(
+            validatedTransport: URLSessionTransport(configuration: configuration),
+            configuration: configuration,
+        )
     }
 
     /// Creates a client that owns a foreground URL session and uses the supplied base URL.
@@ -254,23 +514,30 @@ public final class NetworkClient: Sendable {
     }
 
     private static func validate(_ configuration: Configuration) throws {
-        guard let baseURL = configuration.baseURL else {
-            return
-        }
-        guard let components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
-            throw ConfigurationError(failures: [.baseURLScheme])
+        var failures: [ConfigurationError.Failure] = []
+
+        if let baseURL = configuration.baseURL {
+            if let components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) {
+                let scheme = components.scheme?.lowercased()
+                if scheme != "http", scheme != "https" {
+                    failures.append(.baseURLScheme)
+                }
+                if components.percentEncodedQuery != nil {
+                    failures.append(.baseURLQuery)
+                }
+                if components.percentEncodedFragment != nil {
+                    failures.append(.baseURLFragment)
+                }
+            } else {
+                failures.append(.baseURLScheme)
+            }
         }
 
-        let scheme = components.scheme?.lowercased()
-        var failures: [ConfigurationError.Failure] = []
-        if scheme != "http", scheme != "https" {
-            failures.append(.baseURLScheme)
+        if let requestTimeout = configuration.requestTimeout, requestTimeout <= .zero {
+            failures.append(.requestTimeout)
         }
-        if components.percentEncodedQuery != nil {
-            failures.append(.baseURLQuery)
-        }
-        if components.percentEncodedFragment != nil {
-            failures.append(.baseURLFragment)
+        if let resourceTimeout = configuration.resourceTimeout, resourceTimeout <= .zero {
+            failures.append(.resourceTimeout)
         }
 
         guard failures.isEmpty else {
