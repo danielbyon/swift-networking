@@ -1,0 +1,19 @@
+Sources/Networking/NetworkClient.swift
+  s_592c9c125916fc::t_36c69a8e403191 419,421,426-427
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "330a584b1c8b90797af850ede731063259d6a7e2",
+  "prompts": {},
+  "sessions": {
+    "s_592c9c125916fc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d2d9-b42d-7d80-9a7a-a45dcf752454",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
