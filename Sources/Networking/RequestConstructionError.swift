@@ -26,12 +26,15 @@ public struct RequestConstructionError: Error, Sendable, Equatable {
 
         /// Query layers could not be composed into a usable URL.
         case queryCompositionFailed
+
+        /// The selected operation cannot safely execute the request body's representation.
+        case unsupportedOperationBodyCombination
     }
 
     /// The logical execution identity assigned before route preflight.
     public let requestID: RequestID
 
-    /// The reason route construction failed.
+    /// The reason request construction failed.
     public let reason: Reason
 
     package init(requestID: RequestID, reason: Reason) {

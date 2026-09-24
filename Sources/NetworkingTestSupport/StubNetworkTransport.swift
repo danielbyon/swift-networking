@@ -21,7 +21,7 @@ package actor StubNetworkTransport: NetworkTransport {
     }
 
     private let outcome: Outcome
-    private var requests: [HTTPRequest] = []
+    private var requests: [TransportRequest] = []
 
     package init(response: Data, httpResponse: HTTPResponse) {
         outcome = .response(response, httpResponse)
@@ -31,7 +31,7 @@ package actor StubNetworkTransport: NetworkTransport {
         outcome = .failure(error)
     }
 
-    package func execute(_ request: HTTPRequest) async throws -> (Data, HTTPResponse) {
+    package func execute(_ request: TransportRequest) async throws -> (Data, HTTPResponse) {
         requests.append(request)
         switch outcome {
         case let .response(data, response):
@@ -42,7 +42,7 @@ package actor StubNetworkTransport: NetworkTransport {
     }
 
     package func receivedRequests() -> [HTTPRequest] {
-        requests
+        requests.map(\.httpRequest)
     }
 
     package func executionCount() -> Int {

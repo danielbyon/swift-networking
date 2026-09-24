@@ -370,7 +370,7 @@ private actor ControlledNetworkTransport: NetworkTransport {
         self.gated = gated
     }
 
-    func execute(_: HTTPRequest) async throws -> (Data, HTTPResponse) {
+    func execute(_: TransportRequest) async throws -> (Data, HTTPResponse) {
         requestCount += 1
         let pendingStartWaiters = startWaiters
         startWaiters.removeAll()
