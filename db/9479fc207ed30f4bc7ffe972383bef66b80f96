@@ -1,0 +1,20 @@
+Tests/NetworkingTests/NetworkClientConfigurationTests.swift
+  s_592c9c125916fc::t_728b611cd0eb7f 131-132,161
+  s_592c9c125916fc::t_f4f571119c677b 1-130,133-160,162-222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "db9479fc207ed30f4bc7ffe972383bef66b80f96",
+  "prompts": {},
+  "sessions": {
+    "s_592c9c125916fc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d2d9-b42d-7d80-9a7a-a45dcf752454",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
