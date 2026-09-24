@@ -18,10 +18,19 @@ public struct Response<Value: Sendable>: Sendable {
     /// The identity of the logical execution that produced this response.
     public let requestID: RequestID
 
-    package init(value: Value, httpResponse: HTTPResponse, requestID: RequestID) {
+    /// A configured prefix of the raw response body, when successful-body retention is enabled.
+    public let retainedBody: RetainedBody?
+
+    package init(
+        value: Value,
+        httpResponse: HTTPResponse,
+        requestID: RequestID,
+        retainedBody: RetainedBody? = nil,
+    ) {
         self.value = value
         self.httpResponse = httpResponse
         self.requestID = requestID
+        self.retainedBody = retainedBody
     }
 }
 
