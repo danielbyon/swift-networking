@@ -416,15 +416,15 @@ public final class NetworkClient: Sendable {
 
     /// Creates a client that owns a foreground URL session for its requests.
     public convenience init() {
-        let configuration = Configuration()
+        let defaultConfiguration = Configuration()
         do {
-            try Self.validate(configuration)
+            try Self.validate(defaultConfiguration)
         } catch {
             preconditionFailure("The default NetworkClient configuration must be valid.")
         }
         self.init(
-            validatedTransport: URLSessionTransport(configuration: configuration),
-            configuration: configuration,
+            validatedTransport: URLSessionTransport(configuration: defaultConfiguration),
+            configuration: defaultConfiguration,
         )
     }
 
