@@ -18,20 +18,29 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
     package let method: HTTPRequest.Method
     package let route: EndpointRoute<Input>
     package let query: QueryEncoding<Input>
+    package let bodyEncoding: BodyEncoding<Body>
     package let response: ResponseDecoding<Output>
+    package let jsonEncoderConfiguration: JSONEncoderConfiguration
+    package let jsonDecoderConfiguration: JSONDecoderConfiguration
     private let headerStorage: HeaderStorage
 
     private init(
         method: HTTPRequest.Method,
         route: EndpointRoute<Input>,
         query: QueryEncoding<Input>,
+        bodyEncoding: BodyEncoding<Body>,
         response: ResponseDecoding<Output>,
+        jsonEncoderConfiguration: @escaping JSONEncoderConfiguration = { _ in },
+        jsonDecoderConfiguration: @escaping JSONDecoderConfiguration = { _ in },
         headerStorage: HeaderStorage = .fixed(HTTPFields()),
     ) {
         self.method = method
         self.route = route
         self.query = query
+        self.bodyEncoding = bodyEncoding
         self.response = response
+        self.jsonEncoderConfiguration = jsonEncoderConfiguration
+        self.jsonDecoderConfiguration = jsonDecoderConfiguration
         self.headerStorage = headerStorage
     }
 
@@ -40,7 +49,10 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             method: method,
             route: route,
             query: query,
+            bodyEncoding: bodyEncoding,
             response: response,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
             headerStorage: headerStorage,
         )
     }
@@ -105,6 +117,54 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
                 return fields
             })
         }
+    }
+
+    /// Returns a copy that configures the fresh JSON encoder used for this endpoint's bodies.
+    ///
+    /// The client configuration runs first, followed by endpoint configurations in modifier order.
+    ///
+    /// - Parameter configure: A Sendable configuration closure applied to each fresh encoder.
+    /// - Returns: An endpoint copy with the supplied JSON encoder configuration.
+    public func jsonEncoderConfiguration(
+        _ configure: @escaping @Sendable (JSONEncoder) -> Void,
+    ) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            bodyEncoding: bodyEncoding,
+            response: response,
+            jsonEncoderConfiguration: { encoder in
+                jsonEncoderConfiguration(encoder)
+                configure(encoder)
+            },
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
+            headerStorage: headerStorage,
+        )
+    }
+
+    /// Returns a copy that configures the fresh JSON decoder used for this endpoint's responses.
+    ///
+    /// The client configuration runs first, followed by endpoint configurations in modifier order.
+    ///
+    /// - Parameter configure: A Sendable configuration closure applied to each fresh decoder.
+    /// - Returns: An endpoint copy with the supplied JSON decoder configuration.
+    public func jsonDecoderConfiguration(
+        _ configure: @escaping @Sendable (JSONDecoder) -> Void,
+    ) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            bodyEncoding: bodyEncoding,
+            response: response,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: { decoder in
+                jsonDecoderConfiguration(decoder)
+                configure(decoder)
+            },
+            headerStorage: headerStorage,
+        )
     }
 }
 
@@ -208,6 +268,39 @@ extension Endpoint where Body == Never {
         response: ResponseDecoding<Output>,
         query: QueryEncoding<Input> = .none,
     ) -> Self {
-        Self(method: method, route: route, query: query, response: response)
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            bodyEncoding: .bodyless,
+            response: response,
+        )
+    }
+}
+
+extension Endpoint {
+    /// Creates a data endpoint that encodes its body for each logical execution.
+    ///
+    /// - Parameters:
+    ///   - method: The explicit HTTP method for every invocation.
+    ///   - route: The endpoint-owned route.
+    ///   - body: The strategy used to prepare the immutable body value.
+    ///   - response: The response decoding strategy.
+    ///   - query: The endpoint-owned query mechanism, defaulting to no endpoint query values.
+    /// - Returns: An immutable bodyful data endpoint.
+    public static func data(
+        method: HTTPRequest.Method,
+        route: EndpointRoute<Input>,
+        body: BodyEncoding<Body>,
+        response: ResponseDecoding<Output>,
+        query: QueryEncoding<Input> = .none,
+    ) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            bodyEncoding: body,
+            response: response,
+        )
     }
 }

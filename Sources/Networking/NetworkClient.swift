@@ -10,7 +10,7 @@ import HTTPTypes
 import HTTPTypesFoundation
 
 package protocol NetworkTransport: Sendable {
-    func execute(_ request: HTTPRequest) async throws -> (Data, HTTPResponse)
+    func execute(_ request: TransportRequest) async throws -> (Data, HTTPResponse)
 }
 
 /// Creates a foreground session configuration using the client's policy defaults.
@@ -71,6 +71,32 @@ package func makeURLRequest(
     return urlRequest
 }
 
+/// Converts transport metadata and an in-memory body into the Foundation request used by URLSession.
+///
+/// File-backed bodies are not representable by this foreground data-task adapter and return nil.
+package func makeURLRequest(
+    _ request: TransportRequest,
+    assumesHTTP3Capable: Bool?,
+) -> URLRequest? {
+    guard var urlRequest = makeURLRequest(
+        request.httpRequest,
+        assumesHTTP3Capable: assumesHTTP3Capable,
+    ) else {
+        return nil
+    }
+
+    switch request.body {
+    case .none:
+        break
+    case let .data(data, _):
+        urlRequest.httpBody = data
+    case .file:
+        return nil
+    }
+
+    return urlRequest
+}
+
 /// Converts a positive Swift duration into Foundation's seconds-based timeout value.
 private func durationTimeInterval(_ duration: Duration) -> TimeInterval {
     let components = duration.components
@@ -88,7 +114,7 @@ private struct URLSessionTransport: NetworkTransport {
         assumesHTTP3Capable = configuration.assumesHTTP3Capable
     }
 
-    func execute(_ request: HTTPRequest) async throws -> (Data, HTTPResponse) {
+    func execute(_ request: TransportRequest) async throws -> (Data, HTTPResponse) {
         guard let urlRequest = makeURLRequest(
             request,
             assumesHTTP3Capable: assumesHTTP3Capable,
@@ -164,6 +190,12 @@ public final class NetworkClient: Sendable {
         /// Client-wide defaults for Codable query serialization.
         public let urlQueryEncoderConfiguration: URLQueryEncoder.Configuration
 
+        /// Client-wide configuration applied to each fresh JSON request encoder.
+        public let jsonEncoderConfiguration: @Sendable (JSONEncoder) -> Void
+
+        /// Client-wide configuration applied to each fresh JSON response decoder.
+        public let jsonDecoderConfiguration: @Sendable (JSONDecoder) -> Void
+
         /// The URL cache used by the foreground session. A nil value disables URL caching.
         public let urlCache: URLCache?
 
@@ -209,6 +241,8 @@ public final class NetworkClient: Sendable {
             defaultHeaders = HTTPFields()
             defaultQueryItems = []
             urlQueryEncoderConfiguration = .init()
+            jsonEncoderConfiguration = { _ in }
+            jsonDecoderConfiguration = { _ in }
             urlCache = nil
             httpCookieStorage = nil
             requestTimeout = nil
@@ -227,6 +261,8 @@ public final class NetworkClient: Sendable {
             defaultHeaders: HTTPFields,
             defaultQueryItems: [URLQueryItem],
             urlQueryEncoderConfiguration: URLQueryEncoder.Configuration,
+            jsonEncoderConfiguration: @escaping JSONEncoderConfiguration,
+            jsonDecoderConfiguration: @escaping JSONDecoderConfiguration,
             urlCache: URLCache?,
             httpCookieStorage: HTTPCookieStorage?,
             requestTimeout: Duration?,
@@ -243,6 +279,8 @@ public final class NetworkClient: Sendable {
             self.defaultHeaders = defaultHeaders
             self.defaultQueryItems = defaultQueryItems
             self.urlQueryEncoderConfiguration = urlQueryEncoderConfiguration
+            self.jsonEncoderConfiguration = jsonEncoderConfiguration
+            self.jsonDecoderConfiguration = jsonDecoderConfiguration
             self.urlCache = urlCache
             self.httpCookieStorage = httpCookieStorage
             self.requestTimeout = requestTimeout
@@ -272,6 +310,30 @@ public final class NetworkClient: Sendable {
             _ configuration: URLQueryEncoder.Configuration,
         ) -> Self {
             copying(urlQueryEncoderConfiguration: .set(configuration))
+        }
+
+        /// Returns a copy with replacement client-wide JSON encoder configuration.
+        ///
+        /// The closure is applied to a new library-owned `JSONEncoder` for every JSON body encoding.
+        ///
+        /// - Parameter configure: A Sendable closure that configures each fresh JSON encoder.
+        /// - Returns: A configuration with the replacement JSON encoder configuration.
+        public func withJSONEncoderConfiguration(
+            _ configure: @escaping @Sendable (JSONEncoder) -> Void,
+        ) -> Self {
+            copying(jsonEncoderConfiguration: .set(configure))
+        }
+
+        /// Returns a copy with replacement client-wide JSON decoder configuration.
+        ///
+        /// The closure is applied to a new library-owned `JSONDecoder` for every JSON response decode.
+        ///
+        /// - Parameter configure: A Sendable closure that configures each fresh JSON decoder.
+        /// - Returns: A configuration with the replacement JSON decoder configuration.
+        public func withJSONDecoderConfiguration(
+            _ configure: @escaping @Sendable (JSONDecoder) -> Void,
+        ) -> Self {
+            copying(jsonDecoderConfiguration: .set(configure))
         }
 
         /// Returns a copy that uses the supplied logical-execution identity generator.
@@ -371,6 +433,12 @@ public final class NetworkClient: Sendable {
             defaultQueryItems defaultQueryItemsUpdate: ConfigurationFieldUpdate<[URLQueryItem]> = .unchanged,
             urlQueryEncoderConfiguration urlQueryEncoderConfigurationUpdate: ConfigurationFieldUpdate<URLQueryEncoder
                 .Configuration> = .unchanged,
+            jsonEncoderConfiguration jsonEncoderConfigurationUpdate: ConfigurationFieldUpdate<
+                JSONEncoderConfiguration,
+            > = .unchanged,
+            jsonDecoderConfiguration jsonDecoderConfigurationUpdate: ConfigurationFieldUpdate<
+                JSONDecoderConfiguration,
+            > = .unchanged,
             urlCache urlCacheUpdate: ConfigurationFieldUpdate<URLCache?> = .unchanged,
             httpCookieStorage httpCookieStorageUpdate: ConfigurationFieldUpdate<HTTPCookieStorage?> = .unchanged,
             requestTimeout requestTimeoutUpdate: ConfigurationFieldUpdate<Duration?> = .unchanged,
@@ -391,6 +459,12 @@ public final class NetworkClient: Sendable {
                 defaultQueryItems: defaultQueryItemsUpdate.applying(to: defaultQueryItems),
                 urlQueryEncoderConfiguration: urlQueryEncoderConfigurationUpdate.applying(
                     to: urlQueryEncoderConfiguration,
+                ),
+                jsonEncoderConfiguration: jsonEncoderConfigurationUpdate.applying(
+                    to: jsonEncoderConfiguration,
+                ),
+                jsonDecoderConfiguration: jsonDecoderConfigurationUpdate.applying(
+                    to: jsonDecoderConfiguration,
                 ),
                 urlCache: urlCacheUpdate.applying(to: urlCache),
                 httpCookieStorage: httpCookieStorageUpdate.applying(to: httpCookieStorage),
@@ -468,6 +542,8 @@ public final class NetworkClient: Sendable {
         let clientDefaultHeaders = configuration.defaultHeaders
         let clientQueryItems = configuration.defaultQueryItems
         let clientEncoderConfiguration = configuration.urlQueryEncoderConfiguration
+        let clientJSONEncoderConfiguration = configuration.jsonEncoderConfiguration
+        let clientJSONDecoderConfiguration = configuration.jsonDecoderConfiguration
         let routeKind: QueryRouteKind =
             switch request.route {
             case .absolute:
@@ -487,15 +563,32 @@ public final class NetworkClient: Sendable {
                 requestQueryItems: request.requestQueryItems,
                 requestID: requestID,
             )
+            let preparedBody = try request.body?.prepare(
+                clientJSONEncoderConfiguration: clientJSONEncoderConfiguration,
+                endpointJSONEncoderConfiguration: request.jsonEncoderConfiguration,
+            ) ?? .none
+            var inferredHeaders = preparedBody.inferredHeaders
+            if let inferredAccept = request.response.inferredAccept {
+                inferredHeaders[fields: .accept] = [HTTPField(name: .accept, value: inferredAccept)]
+            }
             let headerFields = HeaderComposer.compose(
-                libraryInferred: HTTPFields(),
+                libraryInferred: inferredHeaders,
                 clientDefaults: clientDefaultHeaders,
                 endpoint: request.endpointHeaders,
                 request: request.requestHeaders,
             )
             let httpRequest = HTTPRequest(method: request.method, url: url, headerFields: headerFields)
-            let (data, httpResponse) = try await networkTransport.execute(httpRequest)
-            let value = try request.response.decode(data, response: httpResponse)
+            if case .file = preparedBody {
+                throw RequestConstructionError(requestID: requestID, reason: .unsupportedOperationBodyCombination)
+            }
+            let transportRequest = TransportRequest(httpRequest: httpRequest, body: preparedBody)
+            let (data, httpResponse) = try await networkTransport.execute(transportRequest)
+            let value = try request.response.decode(
+                data,
+                response: httpResponse,
+                clientJSONDecoderConfiguration: clientJSONDecoderConfiguration,
+                endpointJSONDecoderConfiguration: request.jsonDecoderConfiguration,
+            )
             return Response(value: value, httpResponse: httpResponse, requestID: requestID)
         }
     }

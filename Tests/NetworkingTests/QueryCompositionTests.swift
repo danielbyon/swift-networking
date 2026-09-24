@@ -334,8 +334,8 @@ private struct NestedChild: Encodable, Sendable {
 private actor QueryRecordingTransport: NetworkTransport {
     private var requests: [HTTPRequest] = []
 
-    func execute(_ request: HTTPRequest) async throws -> (Data, HTTPResponse) {
-        requests.append(request)
+    func execute(_ request: TransportRequest) async throws -> (Data, HTTPResponse) {
+        requests.append(request.httpRequest)
         return (Data(), HTTPResponse(status: .init(code: 200)))
     }
 

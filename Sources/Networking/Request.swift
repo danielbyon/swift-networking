@@ -17,6 +17,9 @@ public struct Request<Output: Sendable>: Sendable {
     package let response: ResponseDecoding<Output>
     package let endpointHeaders: HTTPFields
     package let requestHeaders: HTTPFields
+    package let body: RequestBody?
+    package let jsonEncoderConfiguration: JSONEncoderConfiguration
+    package let jsonDecoderConfiguration: JSONDecoderConfiguration
 
     private init(
         method: HTTPRequest.Method,
@@ -26,6 +29,9 @@ public struct Request<Output: Sendable>: Sendable {
         response: ResponseDecoding<Output>,
         endpointHeaders: HTTPFields,
         requestHeaders: HTTPFields = HTTPFields(),
+        body: RequestBody? = nil,
+        jsonEncoderConfiguration: @escaping JSONEncoderConfiguration = { _ in },
+        jsonDecoderConfiguration: @escaping JSONDecoderConfiguration = { _ in },
     ) {
         self.method = method
         self.route = route
@@ -34,6 +40,9 @@ public struct Request<Output: Sendable>: Sendable {
         self.response = response
         self.endpointHeaders = endpointHeaders
         self.requestHeaders = requestHeaders
+        self.body = body
+        self.jsonEncoderConfiguration = jsonEncoderConfiguration
+        self.jsonDecoderConfiguration = jsonDecoderConfiguration
     }
 
     /// Binds endpoint input to a bodyless endpoint and resolves its route.
@@ -49,6 +58,8 @@ public struct Request<Output: Sendable>: Sendable {
             requestQueryItems: [],
             response: endpoint.response,
             endpointHeaders: endpoint.resolveHeaders(input: input),
+            jsonEncoderConfiguration: endpoint.jsonEncoderConfiguration,
+            jsonDecoderConfiguration: endpoint.jsonDecoderConfiguration,
         )
     }
 
@@ -63,6 +74,57 @@ public struct Request<Output: Sendable>: Sendable {
             requestQueryItems: [],
             response: endpoint.response,
             endpointHeaders: endpoint.constantHeaders,
+            jsonEncoderConfiguration: endpoint.jsonEncoderConfiguration,
+            jsonDecoderConfiguration: endpoint.jsonDecoderConfiguration,
+        )
+    }
+
+    /// Binds endpoint input and a body value to a bodyful endpoint invocation.
+    ///
+    /// The endpoint input is captured immediately, while body encoding remains deferred until
+    /// each logical execution.
+    ///
+    /// - Parameters:
+    ///   - endpoint: The reusable endpoint contract.
+    ///   - input: The value used to resolve the endpoint route, query, and input-derived headers.
+    ///   - body: The immutable body value retained for execution.
+    public init<Input: Sendable, Body: Sendable>(
+        endpoint: Endpoint<Input, Body, Output>,
+        input: Input,
+        body: Body,
+    ) {
+        self.init(
+            method: endpoint.method,
+            route: endpoint.route.resolve(input: input),
+            query: endpoint.query.capture(input: input),
+            requestQueryItems: [],
+            response: endpoint.response,
+            endpointHeaders: endpoint.resolveHeaders(input: input),
+            body: RequestBody(body: body, encoding: endpoint.bodyEncoding),
+            jsonEncoderConfiguration: endpoint.jsonEncoderConfiguration,
+            jsonDecoderConfiguration: endpoint.jsonDecoderConfiguration,
+        )
+    }
+
+    /// Binds a body value to a no-input endpoint using only its constant route and query state.
+    ///
+    /// Input-derived route, query, or header builders are not invoked for `Never` input.
+    /// Body encoding remains deferred until each logical execution.
+    ///
+    /// - Parameters:
+    ///   - endpoint: The reusable no-input endpoint contract.
+    ///   - body: The immutable body value retained for execution.
+    public init<Body: Sendable>(endpoint: Endpoint<Never, Body, Output>, body: Body) {
+        self.init(
+            method: endpoint.method,
+            route: endpoint.route.constantRoute,
+            query: endpoint.query.constant,
+            requestQueryItems: [],
+            response: endpoint.response,
+            endpointHeaders: endpoint.constantHeaders,
+            body: RequestBody(body: body, encoding: endpoint.bodyEncoding),
+            jsonEncoderConfiguration: endpoint.jsonEncoderConfiguration,
+            jsonDecoderConfiguration: endpoint.jsonDecoderConfiguration,
         )
     }
 
@@ -82,6 +144,9 @@ public struct Request<Output: Sendable>: Sendable {
             response: response,
             endpointHeaders: endpointHeaders,
             requestHeaders: requestHeaders,
+            body: body,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
         )
     }
 
@@ -101,6 +166,9 @@ public struct Request<Output: Sendable>: Sendable {
             response: response,
             endpointHeaders: endpointHeaders,
             requestHeaders: fields,
+            body: body,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
         )
     }
 
@@ -124,6 +192,9 @@ public struct Request<Output: Sendable>: Sendable {
             response: response,
             endpointHeaders: endpointHeaders,
             requestHeaders: fields,
+            body: body,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
         )
     }
 }
