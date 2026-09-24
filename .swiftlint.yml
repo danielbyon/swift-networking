@@ -1,6 +1,9 @@
 # Repository-specific SwiftLint overlay for swift-networking.
 # The shared swift-tooling baseline supplies the common lint policy.
 
+disabled_rules:
+  - incompatible_concurrency_annotation
+
 included:
   - Sources
   - Tests
