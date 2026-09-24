@@ -366,44 +366,47 @@ public final class NetworkClient: Sendable {
         /// Fields marked unchanged keep their current values. A set update replaces the field,
         /// including when the replacement value is nil.
         private func copying(
-            baseURL: ConfigurationFieldUpdate<URL?> = .unchanged,
-            defaultHeaders: ConfigurationFieldUpdate<HTTPFields> = .unchanged,
-            defaultQueryItems: ConfigurationFieldUpdate<[URLQueryItem]> = .unchanged,
-            urlQueryEncoderConfiguration: ConfigurationFieldUpdate<URLQueryEncoder.Configuration> = .unchanged,
-            urlCache: ConfigurationFieldUpdate<URLCache?> = .unchanged,
-            httpCookieStorage: ConfigurationFieldUpdate<HTTPCookieStorage?> = .unchanged,
-            requestTimeout: ConfigurationFieldUpdate<Duration?> = .unchanged,
-            resourceTimeout: ConfigurationFieldUpdate<Duration?> = .unchanged,
-            waitsForConnectivity: ConfigurationFieldUpdate<Bool?> = .unchanged,
-            allowsExpensiveNetworkAccess: ConfigurationFieldUpdate<Bool?> = .unchanged,
-            allowsConstrainedNetworkAccess: ConfigurationFieldUpdate<Bool?> = .unchanged,
-            allowsCellularAccess: ConfigurationFieldUpdate<Bool?> = .unchanged,
-            cachePolicy: ConfigurationFieldUpdate<URLRequest.CachePolicy?> = .unchanged,
-            assumesHTTP3Capable: ConfigurationFieldUpdate<Bool?> = .unchanged,
-            requestIDGenerator: ConfigurationFieldUpdate<any RequestIDGenerator> = .unchanged,
+            baseURL baseURLUpdate: ConfigurationFieldUpdate<URL?> = .unchanged,
+            defaultHeaders defaultHeadersUpdate: ConfigurationFieldUpdate<HTTPFields> = .unchanged,
+            defaultQueryItems defaultQueryItemsUpdate: ConfigurationFieldUpdate<[URLQueryItem]> = .unchanged,
+            urlQueryEncoderConfiguration urlQueryEncoderConfigurationUpdate: ConfigurationFieldUpdate<URLQueryEncoder
+                .Configuration> = .unchanged,
+            urlCache urlCacheUpdate: ConfigurationFieldUpdate<URLCache?> = .unchanged,
+            httpCookieStorage httpCookieStorageUpdate: ConfigurationFieldUpdate<HTTPCookieStorage?> = .unchanged,
+            requestTimeout requestTimeoutUpdate: ConfigurationFieldUpdate<Duration?> = .unchanged,
+            resourceTimeout resourceTimeoutUpdate: ConfigurationFieldUpdate<Duration?> = .unchanged,
+            waitsForConnectivity waitsForConnectivityUpdate: ConfigurationFieldUpdate<Bool?> = .unchanged,
+            allowsExpensiveNetworkAccess allowsExpensiveNetworkAccessUpdate: ConfigurationFieldUpdate<Bool?> =
+                .unchanged,
+            allowsConstrainedNetworkAccess allowsConstrainedNetworkAccessUpdate: ConfigurationFieldUpdate<Bool?> =
+                .unchanged,
+            allowsCellularAccess allowsCellularAccessUpdate: ConfigurationFieldUpdate<Bool?> = .unchanged,
+            cachePolicy cachePolicyUpdate: ConfigurationFieldUpdate<URLRequest.CachePolicy?> = .unchanged,
+            assumesHTTP3Capable assumesHTTP3CapableUpdate: ConfigurationFieldUpdate<Bool?> = .unchanged,
+            requestIDGenerator requestIDGeneratorUpdate: ConfigurationFieldUpdate<any RequestIDGenerator> = .unchanged,
         ) -> Self {
             Self(
-                baseURL: baseURL.applying(to: self.baseURL),
-                defaultHeaders: defaultHeaders.applying(to: self.defaultHeaders),
-                defaultQueryItems: defaultQueryItems.applying(to: self.defaultQueryItems),
-                urlQueryEncoderConfiguration: urlQueryEncoderConfiguration.applying(
-                    to: self.urlQueryEncoderConfiguration,
+                baseURL: baseURLUpdate.applying(to: baseURL),
+                defaultHeaders: defaultHeadersUpdate.applying(to: defaultHeaders),
+                defaultQueryItems: defaultQueryItemsUpdate.applying(to: defaultQueryItems),
+                urlQueryEncoderConfiguration: urlQueryEncoderConfigurationUpdate.applying(
+                    to: urlQueryEncoderConfiguration,
                 ),
-                urlCache: urlCache.applying(to: self.urlCache),
-                httpCookieStorage: httpCookieStorage.applying(to: self.httpCookieStorage),
-                requestTimeout: requestTimeout.applying(to: self.requestTimeout),
-                resourceTimeout: resourceTimeout.applying(to: self.resourceTimeout),
-                waitsForConnectivity: waitsForConnectivity.applying(to: self.waitsForConnectivity),
-                allowsExpensiveNetworkAccess: allowsExpensiveNetworkAccess.applying(
-                    to: self.allowsExpensiveNetworkAccess,
+                urlCache: urlCacheUpdate.applying(to: urlCache),
+                httpCookieStorage: httpCookieStorageUpdate.applying(to: httpCookieStorage),
+                requestTimeout: requestTimeoutUpdate.applying(to: requestTimeout),
+                resourceTimeout: resourceTimeoutUpdate.applying(to: resourceTimeout),
+                waitsForConnectivity: waitsForConnectivityUpdate.applying(to: waitsForConnectivity),
+                allowsExpensiveNetworkAccess: allowsExpensiveNetworkAccessUpdate.applying(
+                    to: allowsExpensiveNetworkAccess,
                 ),
-                allowsConstrainedNetworkAccess: allowsConstrainedNetworkAccess.applying(
-                    to: self.allowsConstrainedNetworkAccess,
+                allowsConstrainedNetworkAccess: allowsConstrainedNetworkAccessUpdate.applying(
+                    to: allowsConstrainedNetworkAccess,
                 ),
-                allowsCellularAccess: allowsCellularAccess.applying(to: self.allowsCellularAccess),
-                cachePolicy: cachePolicy.applying(to: self.cachePolicy),
-                assumesHTTP3Capable: assumesHTTP3Capable.applying(to: self.assumesHTTP3Capable),
-                requestIDGenerator: requestIDGenerator.applying(to: self.requestIDGenerator),
+                allowsCellularAccess: allowsCellularAccessUpdate.applying(to: allowsCellularAccess),
+                cachePolicy: cachePolicyUpdate.applying(to: cachePolicy),
+                assumesHTTP3Capable: assumesHTTP3CapableUpdate.applying(to: assumesHTTP3Capable),
+                requestIDGenerator: requestIDGeneratorUpdate.applying(to: requestIDGenerator),
             )
         }
     }
