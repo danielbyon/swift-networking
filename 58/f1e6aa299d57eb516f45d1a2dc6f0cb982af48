@@ -1,0 +1,40 @@
+Tests/NetworkingTests/URLQueryEncoderTests.swift
+  s_841bdadb36d27c::t_9e3241d8c79e83 22
+  s_841bdadb36d27c::t_a09446ab5dafc3 271-286,408-415,417-419,421-427
+  s_841bdadb36d27c::t_cfe871ddd3a420 416,420
+  s_981a5b56b525b2::t_8dfe4238ef2dc4 270,428
+Sources/Networking/URLQueryEncoder.swift
+  s_841bdadb36d27c::t_0ce7990bbdb4c6 29,33,39-50,54-59,68
+  s_841bdadb36d27c::t_1ca611f07de69c 51-53
+docs/spec/networking-1.0.md
+  s_841bdadb36d27c::t_9e3241d8c79e83 415-417,448-453
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "58f1e6aa299d57eb516f45d1a2dc6f0cb982af48",
+  "prompts": {},
+  "humans": {
+    "h_a1fa5c19d60fed": {
+      "author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  },
+  "sessions": {
+    "s_841bdadb36d27c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0cf42-1100-7010-bf8b-ba58e01874df",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    },
+    "s_981a5b56b525b2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d033-d7bf-7e02-9dfb-92d42fedb144",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
