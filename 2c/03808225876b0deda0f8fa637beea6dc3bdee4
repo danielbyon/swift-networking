@@ -1,0 +1,67 @@
+docs/spec/networking-1.0.md
+  s_841bdadb36d27c::t_f1eb522b4e9bfe 413-415,445-448
+Tests/NetworkingTests/QueryCompositionTests.swift
+  s_841bdadb36d27c::t_e7d27b7e70a183 95-98,108
+  s_841bdadb36d27c::t_d7af623e03b45b 87-94,99-107,109-111
+  s_981a5b56b525b2::t_942900052c8cd0 86
+Tests/NetworkingTests/URLQueryEncoderTests.swift
+  s_841bdadb36d27c::t_aa65f7c945e152 168-177,179,208-218,278
+  s_841bdadb36d27c::t_60eb3b3dc8b2d4 123-165,325-336
+  s_841bdadb36d27c::t_a190a1a6b7a223 194-207,345-348
+  s_841bdadb36d27c::t_49c88358744b12 271
+  s_841bdadb36d27c::t_31535599457eeb 386
+  s_841bdadb36d27c::t_dca4ae80af3391 22,28,219-221,272-277,279-281,290,404-422
+  s_841bdadb36d27c::t_138d9504784d91 222-257,353-383,389-403
+  s_841bdadb36d27c::t_2f3681f0d34f9e 166-167,178,282,337-340,349-352
+  s_841bdadb36d27c::t_79570424225d11 258-270,384-385,387-388
+  s_841bdadb36d27c::t_aa327fbc3da924 180-193,341-344
+  s_981a5b56b525b2::t_0ea097a81b47bd 423
+Sources/Networking/URLQueryEncoder.swift
+  s_841bdadb36d27c::t_ee9b0fcda116d5 156-158,254,259-263,265-266,286,304,312-313,318
+  s_841bdadb36d27c::t_9dc0523d92ba63 133-135,139-140
+  s_841bdadb36d27c::t_f5a0136fca3902 391
+  s_841bdadb36d27c::t_e93cdb51ef8769 15-20,28-39,43-49,51-52,142-145,147,150,167-171,173-177,179-182,184-190,192-204,207-238,241-248
+  s_841bdadb36d27c::t_1ed2aa3e3eb5c6 271,319,326,336,358,360-361,364-365,428-429,431-432,435,438,444,451,499,507,511,515-516,520
+  s_841bdadb36d27c::t_54af7c25eb4de0 359,362-363
+  s_841bdadb36d27c::t_6e38d8a23bcf0b 314,380,390,464,478
+  s_841bdadb36d27c::t_2ae227c15a3050 50,264
+  s_841bdadb36d27c::t_f010695bbc958a 40-42
+  s_841bdadb36d27c::t_018a4469282a32 430,433-434
+  s_841bdadb36d27c::t_170b524d55cf6e 495
+  s_841bdadb36d27c::t_802646e8e2daba 512-514,517-519
+  s_841bdadb36d27c::t_7daab7eb95d8cd 315
+  s_981a5b56b525b2::t_bf30d759c7cfe6 53,521
+Tests/NetworkingTests/__Snapshots__/QueryCompositionTests/absoluteOpaqueEmbeddedQueryKeyIsPreservedWhileAddingLayers.1.json
+  s_841bdadb36d27c::t_41122de05f6f05 1-3
+Sources/Networking/QueryComposer.swift
+  s_841bdadb36d27c::t_8a3d105557befb 55,104
+  s_841bdadb36d27c::t_2ae227c15a3050 95
+  s_841bdadb36d27c::t_970146ccc3a69d 91-94,96-97,120,126,129
+  s_841bdadb36d27c::t_3939edda58e26f 111
+Tests/NetworkingTests/__Snapshots__/URLQueryEncoderTests/defaultEncodingSnapshot.1.txt
+  s_841bdadb36d27c::t_a621a4246a878e 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2c03808225876b0deda0f8fa637beea6dc3bdee4",
+  "prompts": {},
+  "sessions": {
+    "s_841bdadb36d27c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0cf42-1100-7010-bf8b-ba58e01874df",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    },
+    "s_981a5b56b525b2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d033-d7bf-7e02-9dfb-92d42fedb144",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
