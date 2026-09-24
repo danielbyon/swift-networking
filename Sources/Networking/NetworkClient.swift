@@ -88,7 +88,7 @@ package func makeURLRequest(
     switch request.body {
     case .none:
         break
-    case let .data(data, _):
+    case let .data(data):
         urlRequest.httpBody = data
     case .file:
         return nil
@@ -231,6 +231,7 @@ public final class NetworkClient: Sendable {
         public let assumesHTTP3Capable: Bool?
 
         package let requestIDGenerator: any RequestIDGenerator
+        package let requestAdapters: [AnyRequestAdapter]
 
         /// Creates client configuration with an optional base URL.
         ///
@@ -254,6 +255,7 @@ public final class NetworkClient: Sendable {
             cachePolicy = nil
             assumesHTTP3Capable = nil
             requestIDGenerator = UUIDRequestIDGenerator()
+            requestAdapters = []
         }
 
         private init(
@@ -274,6 +276,7 @@ public final class NetworkClient: Sendable {
             cachePolicy: URLRequest.CachePolicy?,
             assumesHTTP3Capable: Bool?,
             requestIDGenerator: any RequestIDGenerator,
+            requestAdapters: [AnyRequestAdapter],
         ) {
             self.baseURL = baseURL
             self.defaultHeaders = defaultHeaders
@@ -292,6 +295,7 @@ public final class NetworkClient: Sendable {
             self.cachePolicy = cachePolicy
             self.assumesHTTP3Capable = assumesHTTP3Capable
             self.requestIDGenerator = requestIDGenerator
+            self.requestAdapters = requestAdapters
         }
 
         /// Returns a copy with replacement static query items for relative routes.
@@ -343,6 +347,17 @@ public final class NetworkClient: Sendable {
         /// - Returns: A configuration with the replacement generator.
         public func withRequestIDGenerator(_ generator: any RequestIDGenerator) -> Self {
             copying(requestIDGenerator: .set(generator))
+        }
+
+        /// Returns a copy with one adapter appended to the client execution order.
+        ///
+        /// Adapters run after body preparation and receive the request returned by the previous
+        /// adapter. Repeated calls append in call order.
+        ///
+        /// - Parameter adapter: The adapter to append.
+        /// - Returns: A configuration with the adapter added after existing adapters.
+        public func withRequestAdapter(_ adapter: some RequestAdapter) -> Self {
+            copying(requestAdapters: .set(requestAdapters + [AnyRequestAdapter(adapter)]))
         }
 
         /// Returns a copy with replacement client-wide default HTTP fields.
@@ -452,6 +467,7 @@ public final class NetworkClient: Sendable {
             cachePolicy cachePolicyUpdate: ConfigurationFieldUpdate<URLRequest.CachePolicy?> = .unchanged,
             assumesHTTP3Capable assumesHTTP3CapableUpdate: ConfigurationFieldUpdate<Bool?> = .unchanged,
             requestIDGenerator requestIDGeneratorUpdate: ConfigurationFieldUpdate<any RequestIDGenerator> = .unchanged,
+            requestAdapters requestAdaptersUpdate: ConfigurationFieldUpdate<[AnyRequestAdapter]> = .unchanged,
         ) -> Self {
             Self(
                 baseURL: baseURLUpdate.applying(to: baseURL),
@@ -481,6 +497,7 @@ public final class NetworkClient: Sendable {
                 cachePolicy: cachePolicyUpdate.applying(to: cachePolicy),
                 assumesHTTP3Capable: assumesHTTP3CapableUpdate.applying(to: assumesHTTP3Capable),
                 requestIDGenerator: requestIDGeneratorUpdate.applying(to: requestIDGenerator),
+                requestAdapters: requestAdaptersUpdate.applying(to: requestAdapters),
             )
         }
     }
@@ -544,6 +561,7 @@ public final class NetworkClient: Sendable {
         let clientEncoderConfiguration = configuration.urlQueryEncoderConfiguration
         let clientJSONEncoderConfiguration = configuration.jsonEncoderConfiguration
         let clientJSONDecoderConfiguration = configuration.jsonDecoderConfiguration
+        let requestAdapters = configuration.requestAdapters
         let routeKind: QueryRouteKind =
             switch request.route {
             case .absolute:
@@ -581,7 +599,24 @@ public final class NetworkClient: Sendable {
             if case .file = preparedBody {
                 throw RequestConstructionError(requestID: requestID, reason: .unsupportedOperationBodyCombination)
             }
-            let transportRequest = TransportRequest(httpRequest: httpRequest, body: preparedBody)
+
+            let bodyInspection = preparedBody.inspection
+            var adaptedRequest = httpRequest
+            for adapter in requestAdapters {
+                adaptedRequest = try await adapter.adapt(
+                    RequestAdaptationContext(
+                        request: adaptedRequest,
+                        body: bodyInspection,
+                        requestID: requestID,
+                        context: request.context,
+                    ),
+                )
+            }
+
+            let transportRequest = TransportRequest(
+                httpRequest: adaptedRequest,
+                body: bodyInspection,
+            )
             let (data, httpResponse) = try await networkTransport.execute(transportRequest)
             let value = try request.response.decode(
                 data,

@@ -34,9 +34,8 @@ struct BodyEncodingAndResponseDecodingTests {
         let sentRequest = try #require(await (transport.recordedRequests()).first)
         #expect(sentRequest.httpRequest.url?.query == "trace=1")
         #expect(headerValues(.authorization, in: sentRequest.httpRequest.headerFields) == ["request-token"])
-        if case let .data(bytes, contentType) = sentRequest.body {
+        if case let .data(bytes) = sentRequest.body {
             #expect(bytes == payload)
-            #expect(contentType == nil)
             let urlRequest = try #require(makeURLRequest(sentRequest, assumesHTTP3Capable: nil))
             #expect(urlRequest.httpBody == payload)
         } else {
@@ -140,9 +139,8 @@ struct BodyEncodingAndResponseDecodingTests {
         for sentRequest in sentRequests {
             #expect(headerValues(.contentType, in: sentRequest.httpRequest.headerFields) == ["application/json"])
             #expect(headerValues(.accept, in: sentRequest.httpRequest.headerFields) == ["application/json"])
-            if case let .data(bytes, contentType) = sentRequest.body {
+            if case let .data(bytes) = sentRequest.body {
                 #expect(String(decoding: bytes, as: UTF8.self).contains("1700000000"))
-                #expect(contentType == "application/json")
             } else {
                 Issue.record("Expected the JSON body to be encoded as in-memory bytes")
             }
@@ -169,7 +167,7 @@ struct BodyEncodingAndResponseDecodingTests {
         _ = try await client.send(Request(endpoint: endpoint, body: payload))
 
         let sentRequest = try #require(await transport.recordedRequests().first)
-        guard case let .data(bytes, _) = sentRequest.body else {
+        guard case let .data(bytes) = sentRequest.body else {
             Issue.record("Expected the JSON body to reach the transport")
             return
         }
@@ -280,9 +278,8 @@ struct BodyEncodingAndResponseDecodingTests {
         _ = try await client.send(request)
         #expect(encodingCalls.withLock { $0 } == 1)
         let sentRequest = try #require(await (transport.recordedRequests()).first)
-        if case let .data(bytes, contentType) = sentRequest.body {
+        if case let .data(bytes) = sentRequest.body {
             #expect(bytes == Data([3, 4]))
-            #expect(contentType == nil)
         } else {
             Issue.record("Expected the custom body encoder to provide in-memory bytes")
         }
@@ -450,7 +447,12 @@ struct BodyEncodingAndResponseDecodingTests {
         #expect(headerValues(.contentType, in: body.inferredHeaders) == ["application/x-file"])
         let requestURL = try #require(URL(string: "https://example.com/upload"))
         let httpRequest = HTTPRequest(method: .post, url: requestURL, headerFields: body.inferredHeaders)
-        #expect(makeURLRequest(TransportRequest(httpRequest: httpRequest, body: body), assumesHTTP3Capable: nil) == nil)
+        #expect(
+            makeURLRequest(
+                TransportRequest(httpRequest: httpRequest, body: body.inspection),
+                assumesHTTP3Capable: nil,
+            ) == nil,
+        )
         let overriddenFields = HeaderComposer.compose(
             libraryInferred: body.inferredHeaders,
             clientDefaults: makeFields((.contentType, "application/x-client")),
