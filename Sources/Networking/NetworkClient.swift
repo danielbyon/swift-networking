@@ -282,6 +282,21 @@ private struct URLSessionTransport: NetworkTransport {
             (data, response)
         case let .failure(error, _, _):
             throw error
+        case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics):
+            let attempt = AttemptMetrics(
+                requestID: request.requestID,
+                attemptNumber: request.attemptNumber,
+                normalizedMetrics: NormalizedAttemptMetrics(taskMetrics: rawTaskMetrics),
+                outcome: .redirectLimitExceeded,
+                diagnosticReason: nil,
+                rawTaskMetrics: rawTaskMetrics,
+            )
+            throw RedirectError.tooManyRedirects(
+                requestID: request.requestID,
+                maximumRedirects: maximumRedirects,
+                lastResponse: lastResponse,
+                attempts: [attempt],
+            )
         }
     }
 
@@ -293,23 +308,42 @@ private struct URLSessionTransport: NetworkTransport {
             return .failure(error: URLError(.badURL), rawTaskMetrics: nil, didStartTask: false)
         }
 
-        let delegate = URLSessionTaskMetricsDelegate()
+        let delegate = URLSessionTaskMetricsDelegate(transportRequest: request, initialRequest: urlRequest)
         let data: Data
         let urlResponse: URLResponse
         do {
             (data, urlResponse) = try await session.data(for: urlRequest, delegate: delegate)
         } catch {
             let rawTaskMetrics = await delegate.taskMetricsAfterCompletion()
+            if let limit = delegate.redirectLimitExceeded() {
+                return .redirectLimitExceeded(
+                    maximumRedirects: limit.maximumRedirects,
+                    lastResponse: limit.lastResponse,
+                    rawTaskMetrics: rawTaskMetrics,
+                )
+            }
             return .failure(error: error, rawTaskMetrics: rawTaskMetrics, didStartTask: true)
         }
 
         let rawTaskMetrics = await delegate.taskMetricsAfterCompletion()
+        if let limit = delegate.redirectLimitExceeded() {
+            return .redirectLimitExceeded(
+                maximumRedirects: limit.maximumRedirects,
+                lastResponse: limit.lastResponse,
+                rawTaskMetrics: rawTaskMetrics,
+            )
+        }
         guard let response = (urlResponse as? HTTPURLResponse)?.httpResponse else {
             return .failure(error: URLError(.badServerResponse), rawTaskMetrics: rawTaskMetrics, didStartTask: true)
         }
 
         return .success(data: data, response: response, rawTaskMetrics: rawTaskMetrics)
     }
+}
+
+struct RedirectLimitExceeded: Sendable {
+    let maximumRedirects: UInt
+    let lastResponse: HTTPResponse?
 }
 
 /// Tracks task completion separately from completion of metrics collection.
@@ -351,6 +385,9 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
     private struct State: Sendable {
         var metricsCollection = TaskMetricsCollectionState<URLSessionTaskMetrics>()
         var waiters: [CheckedContinuation<URLSessionTaskMetrics?, Never>] = []
+        var followedRedirectCount: UInt = 0
+        var redirectOrdinal: UInt = 0
+        var redirectLimitExceeded: RedirectLimitExceeded?
 
         mutating func takeReadyWaiters() -> (
             URLSessionTaskMetrics??,
@@ -368,6 +405,19 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
     }
 
     private let state = Mutex(State())
+    private let redirectPolicy: RedirectPolicy
+    private let requestID: RequestID
+    private let requestContext: RequestContext
+    private let attemptNumber: UInt
+    private let initialRequest: URLRequest
+
+    init(transportRequest: TransportRequest, initialRequest: URLRequest) {
+        redirectPolicy = transportRequest.redirectPolicy
+        requestID = transportRequest.requestID
+        requestContext = transportRequest.requestContext
+        attemptNumber = transportRequest.attemptNumber
+        self.initialRequest = initialRequest
+    }
 
     func urlSession(
         _: URLSession,
@@ -376,6 +426,56 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
     ) {
         state.withLock { $0.metricsCollection.finishCollecting(metrics) }
         resumeReadyWaiters()
+    }
+
+    func urlSession(
+        _: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest: URLRequest,
+        completionHandler: (URLRequest?) -> Void,
+    ) {
+        let redirectOrdinal = state.withLock { storage in
+            storage.redirectOrdinal += 1
+            return storage.redirectOrdinal
+        }
+
+        guard let httpResponse = response.httpResponse else {
+            completionHandler(nil)
+            return
+        }
+
+        let context = RedirectPolicy.Context(
+            currentRequest: task.currentRequest ?? initialRequest,
+            proposedRequest: newRequest,
+            httpResponse: httpResponse,
+            requestID: requestID,
+            requestContext: requestContext,
+            attemptNumber: attemptNumber,
+            redirectOrdinal: redirectOrdinal,
+        )
+        guard redirectPolicy.decision(for: context) == .follow else {
+            completionHandler(nil)
+            return
+        }
+
+        let exceededLimit = state.withLock { storage in
+            guard storage.followedRedirectCount >= redirectPolicy.maximumRedirects else {
+                storage.followedRedirectCount += 1
+                return false
+            }
+
+            storage.redirectLimitExceeded = RedirectLimitExceeded(
+                maximumRedirects: redirectPolicy.maximumRedirects,
+                lastResponse: httpResponse,
+            )
+            return true
+        }
+        completionHandler(exceededLimit ? nil : newRequest)
+    }
+
+    func redirectLimitExceeded() -> RedirectLimitExceeded? {
+        state.withLock(\.redirectLimitExceeded)
     }
 
     func urlSession(
@@ -518,6 +618,9 @@ public final class NetworkClient: Sendable {
         /// The default bounded retry policy, with retries disabled unless explicitly configured.
         public let retryPolicy: RetryPolicy
 
+        /// The default policy used when deciding whether URLSession follows an HTTP redirect.
+        public let redirectPolicy: RedirectPolicy
+
         /// The provider used by endpoints that require authentication.
         public let authenticationProvider: (any AuthenticationProvider)?
 
@@ -555,6 +658,7 @@ public final class NetworkClient: Sendable {
             cachePolicy = nil
             responseValidationPolicy = .successfulStatusCodes
             retryPolicy = RetryPolicy()
+            redirectPolicy = .follow
             authenticationProvider = nil
             successfulResponseBodyRetentionPolicy = .none
             validationErrorBodyRetentionPolicy = .unlimited
@@ -581,6 +685,7 @@ public final class NetworkClient: Sendable {
             cachePolicy: URLRequest.CachePolicy?,
             responseValidationPolicy: ResponseValidationPolicy,
             retryPolicy: RetryPolicy,
+            redirectPolicy: RedirectPolicy,
             successfulResponseBodyRetentionPolicy: BodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: BodyRetentionPolicy,
             assumesHTTP3Capable: Bool?,
@@ -605,6 +710,7 @@ public final class NetworkClient: Sendable {
             self.cachePolicy = cachePolicy
             self.responseValidationPolicy = responseValidationPolicy
             self.retryPolicy = retryPolicy
+            self.redirectPolicy = redirectPolicy
             self.successfulResponseBodyRetentionPolicy = successfulResponseBodyRetentionPolicy
             self.validationErrorBodyRetentionPolicy = validationErrorBodyRetentionPolicy
             self.assumesHTTP3Capable = assumesHTTP3Capable
@@ -764,6 +870,11 @@ public final class NetworkClient: Sendable {
             copying(retryPolicy: .set(policy))
         }
 
+        /// Returns a copy with a replacement client-wide redirect policy.
+        public func withRedirectPolicy(_ policy: RedirectPolicy) -> Self {
+            copying(redirectPolicy: .set(policy))
+        }
+
         /// Returns a copy with a replacement accepted-response body-retention policy.
         public func withSuccessfulResponseBodyRetentionPolicy(_ policy: BodyRetentionPolicy) -> Self {
             copying(successfulResponseBodyRetentionPolicy: .set(policy))
@@ -812,6 +923,7 @@ public final class NetworkClient: Sendable {
                 ResponseValidationPolicy,
             > = .unchanged,
             retryPolicy retryPolicyUpdate: ConfigurationFieldUpdate<RetryPolicy> = .unchanged,
+            redirectPolicy redirectPolicyUpdate: ConfigurationFieldUpdate<RedirectPolicy> = .unchanged,
             successfulResponseBodyRetentionPolicy successfulResponseBodyRetentionPolicyUpdate: ConfigurationFieldUpdate<
                 BodyRetentionPolicy,
             > = .unchanged,
@@ -853,6 +965,7 @@ public final class NetworkClient: Sendable {
                 cachePolicy: cachePolicyUpdate.applying(to: cachePolicy),
                 responseValidationPolicy: responseValidationPolicyUpdate.applying(to: responseValidationPolicy),
                 retryPolicy: retryPolicyUpdate.applying(to: retryPolicy),
+                redirectPolicy: redirectPolicyUpdate.applying(to: redirectPolicy),
                 successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicyUpdate.applying(
                     to: successfulResponseBodyRetentionPolicy,
                 ),
@@ -945,6 +1058,7 @@ public final class NetworkClient: Sendable {
         let clientJSONDecoderConfiguration = configuration.jsonDecoderConfiguration
         let clientResponseValidationPolicy = configuration.responseValidationPolicy
         let retryPolicy = request.retryPolicy ?? configuration.retryPolicy
+        let redirectPolicy = request.redirectPolicy ?? configuration.redirectPolicy
         let clientSuccessfulResponseBodyRetentionPolicy = configuration.successfulResponseBodyRetentionPolicy
         let clientValidationErrorBodyRetentionPolicy = configuration.validationErrorBodyRetentionPolicy
         let requestAdapters = configuration.requestAdapters
@@ -1015,10 +1129,34 @@ public final class NetworkClient: Sendable {
                 let transportRequest = TransportRequest(
                     httpRequest: adaptedRequest,
                     body: bodyInspection,
+                    redirectPolicy: redirectPolicy,
+                    requestID: requestID,
+                    requestContext: request.context,
+                    attemptNumber: nextAttemptNumber,
                 )
                 let transportResult = await networkTransport.executeWithMetrics(transportRequest)
 
                 switch transportResult {
+                case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics):
+                    attemptNumber = nextAttemptNumber
+                    let normalizedMetrics = NormalizedAttemptMetrics(taskMetrics: rawTaskMetrics)
+                    attempts.append(
+                        AttemptMetrics(
+                            requestID: requestID,
+                            attemptNumber: attemptNumber,
+                            normalizedMetrics: normalizedMetrics,
+                            outcome: .redirectLimitExceeded,
+                            diagnosticReason: "redirect limit exceeded",
+                            rawTaskMetrics: rawTaskMetrics,
+                        ),
+                    )
+                    throw RedirectError.tooManyRedirects(
+                        requestID: requestID,
+                        maximumRedirects: maximumRedirects,
+                        lastResponse: lastResponse,
+                        attempts: attempts,
+                    )
+
                 case let .success(data, httpResponse, rawTaskMetrics):
                     attemptNumber = nextAttemptNumber
                     let normalizedMetrics = NormalizedAttemptMetrics(taskMetrics: rawTaskMetrics)
