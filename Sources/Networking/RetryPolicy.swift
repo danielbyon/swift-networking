@@ -8,11 +8,52 @@
 import Foundation
 import HTTPTypes
 
-/// An immutable policy for bounded, immediate retries of HTTP responses and transport failures.
+/// An immutable policy for bounded retries of HTTP responses and transport failures.
 ///
 /// Retries are disabled by default. A policy can be replaced at client, endpoint, or request
 /// scope. Its mutable `Configuration` is used only while constructing this value.
 public struct RetryPolicy: Sendable {
+    /// The local delay calculation used before an ordinary retry.
+    public enum BackoffStrategy: Sendable, Equatable {
+        /// Retry without a local delay.
+        case immediate
+
+        /// Waits for a fixed duration before each retry.
+        case constant(Duration, jitter: Jitter = .none)
+
+        /// Increases the delay by a fixed amount for each retry and clamps it to a finite maximum.
+        case linear(initial: Duration, increment: Duration, maximum: Duration, jitter: Jitter = .none)
+
+        /// Multiplies the delay for each retry and clamps it to a finite maximum.
+        case exponential(
+            initial: Duration,
+            multiplier: Double = 2,
+            maximum: Duration,
+            jitter: Jitter = .full,
+        )
+    }
+
+    /// The local randomization applied to a calculated backoff delay.
+    public enum Jitter: Sendable, Equatable {
+        /// Uses the calculated local delay without randomization.
+        case none
+
+        /// Selects a delay uniformly from zero through the calculated local delay.
+        case full
+    }
+
+    /// Selects how a valid server Retry-After delay combines with local backoff.
+    public enum RetryAfterPolicy: Sendable, Equatable {
+        /// Always uses the local backoff delay.
+        case local
+
+        /// Uses the capped server delay when supplied, otherwise the local delay.
+        case server
+
+        /// Uses the greater of the local delay and capped server delay.
+        case maximum
+    }
+
     /// The reason the built-in rules proposed retrying or stopping.
     public enum Reason: Sendable, Equatable {
         /// The HTTP method is not in the policy's retryable method set.
@@ -105,6 +146,15 @@ public struct RetryPolicy: Sendable {
         /// The maximum number of retries after the initial transport attempt.
         public var maximumRetries: UInt
 
+        /// The local backoff strategy used before each retry.
+        public var backoffStrategy: BackoffStrategy
+
+        /// The precedence used to combine local and server-provided retry delays.
+        public var retryAfterPolicy: RetryAfterPolicy
+
+        /// The maximum server-provided Retry-After delay, or nil to accept the representable range.
+        public var maximumRetryAfterDelay: Duration?
+
         /// HTTP methods eligible for built-in status and transport retries.
         public var retryableMethods: Set<HTTPRequest.Method>
 
@@ -120,6 +170,9 @@ public struct RetryPolicy: Sendable {
         /// Creates builder state using the library's built-in eligibility defaults.
         public init() {
             maximumRetries = 0
+            backoffStrategy = .immediate
+            retryAfterPolicy = .server
+            maximumRetryAfterDelay = .seconds(60)
             retryableMethods = [.get, .head, .options, .trace, .put, .delete]
             retryableStatusCodes = [408, 429, 500, 502, 503, 504]
             retryableURLErrorCodes = [
@@ -136,6 +189,15 @@ public struct RetryPolicy: Sendable {
 
     /// The maximum number of retries after the initial transport attempt.
     public let maximumRetries: UInt
+
+    /// The local backoff strategy used before each retry.
+    public let backoffStrategy: BackoffStrategy
+
+    /// The precedence used to combine local and server-provided retry delays.
+    public let retryAfterPolicy: RetryAfterPolicy
+
+    /// The maximum server-provided Retry-After delay, or nil to accept the representable range.
+    public let maximumRetryAfterDelay: Duration?
 
     /// HTTP methods eligible for built-in status and transport retries.
     public let retryableMethods: Set<HTTPRequest.Method>
@@ -157,6 +219,9 @@ public struct RetryPolicy: Sendable {
     /// Creates an immutable policy from construction-only mutable configuration.
     public init(configuration: Configuration) {
         maximumRetries = configuration.maximumRetries
+        backoffStrategy = configuration.backoffStrategy
+        retryAfterPolicy = configuration.retryAfterPolicy
+        maximumRetryAfterDelay = configuration.maximumRetryAfterDelay
         retryableMethods = configuration.retryableMethods
         retryableStatusCodes = configuration.retryableStatusCodes
         retryableURLErrorCodes = configuration.retryableURLErrorCodes

@@ -750,6 +750,7 @@ public final class NetworkClient: Sendable {
 
     private let transport: any NetworkTransport
     private let configuration: Configuration
+    private let retryTimingDependencies: RetryTimingDependencies
 
     /// Creates a client that owns a foreground URL session for its requests.
     public convenience init() {
@@ -762,6 +763,7 @@ public final class NetworkClient: Sendable {
         self.init(
             validatedTransport: URLSessionTransport(configuration: defaultConfiguration),
             configuration: defaultConfiguration,
+            retryTimingDependencies: .live,
         )
     }
 
@@ -773,6 +775,7 @@ public final class NetworkClient: Sendable {
         self.init(
             validatedTransport: URLSessionTransport(configuration: configuration),
             configuration: configuration,
+            retryTimingDependencies: .live,
         )
     }
 
@@ -784,14 +787,27 @@ public final class NetworkClient: Sendable {
         try self.init(configuration: Configuration(baseURL: baseURL))
     }
 
-    package convenience init(transport: any NetworkTransport, configuration: Configuration = .init()) throws {
+    package convenience init(
+        transport: any NetworkTransport,
+        configuration: Configuration = .init(),
+        retryTimingDependencies: RetryTimingDependencies = .live,
+    ) throws {
         try Self.validate(configuration)
-        self.init(validatedTransport: transport, configuration: configuration)
+        self.init(
+            validatedTransport: transport,
+            configuration: configuration,
+            retryTimingDependencies: retryTimingDependencies,
+        )
     }
 
-    private init(validatedTransport transport: any NetworkTransport, configuration: Configuration) {
+    private init(
+        validatedTransport transport: any NetworkTransport,
+        configuration: Configuration,
+        retryTimingDependencies: RetryTimingDependencies,
+    ) {
         self.transport = transport
         self.configuration = configuration
+        self.retryTimingDependencies = retryTimingDependencies
     }
 
     /// Starts a shared logical execution immediately.
@@ -801,6 +817,7 @@ public final class NetworkClient: Sendable {
     public func task<Output: Sendable>(for request: Request<Output>) -> NetworkTask<Output> {
         let requestID = configuration.requestIDGenerator.generateRequestID()
         let networkTransport = transport
+        let timingDependencies = retryTimingDependencies
         let baseURL = configuration.baseURL
         let clientDefaultHeaders = configuration.defaultHeaders
         let clientQueryItems = configuration.defaultQueryItems
@@ -920,6 +937,19 @@ public final class NetworkClient: Sendable {
                                 rawTaskMetrics: rawTaskMetrics,
                             ),
                         )
+                        let localDelay = RetryTiming.localDelay(
+                            strategy: retryPolicy.backoffStrategy,
+                            retryCount: retryCount,
+                            randomUnit: timingDependencies.randomUnit,
+                        )
+                        let delay = RetryTiming.resolve(
+                            localDelay: localDelay,
+                            retryAfterValue: httpResponse.headerFields[.retryAfter],
+                            policy: retryPolicy.retryAfterPolicy,
+                            maximumServerDelay: retryPolicy.maximumRetryAfterDelay,
+                            now: timingDependencies.now(),
+                        )
+                        try await RetryTiming.sleepIfNeeded(delay, using: timingDependencies.sleep)
                         retryCount += 1
                         continue
                     }
@@ -1053,6 +1083,19 @@ public final class NetworkClient: Sendable {
                         throw error
                     }
 
+                    let localDelay = RetryTiming.localDelay(
+                        strategy: retryPolicy.backoffStrategy,
+                        retryCount: retryCount,
+                        randomUnit: timingDependencies.randomUnit,
+                    )
+                    let delay = RetryTiming.resolve(
+                        localDelay: localDelay,
+                        retryAfterValue: nil,
+                        policy: retryPolicy.retryAfterPolicy,
+                        maximumServerDelay: retryPolicy.maximumRetryAfterDelay,
+                        now: timingDependencies.now(),
+                    )
+                    try await RetryTiming.sleepIfNeeded(delay, using: timingDependencies.sleep)
                     retryCount += 1
                 }
             }
