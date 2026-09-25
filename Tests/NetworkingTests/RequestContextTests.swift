@@ -38,7 +38,7 @@ struct RequestContextTests {
             .context(DiagnosticLabelKey.self, value: "profile")
 
         #expect(request.context.diagnosticRepresentation == [
-            String(reflecting: DiagnosticLabelKey.self): "label=profile",
+            "NetworkingTests.DiagnosticLabelKey": "label=profile",
         ])
     }
 
@@ -52,7 +52,7 @@ struct RequestContextTests {
         )
 
         #expect(request.context.diagnosticRepresentation == [
-            String(reflecting: DiagnosticLabelKey.self): "label=profile",
+            "NetworkingTests.DiagnosticLabelKey": "label=profile",
         ])
     }
 
@@ -87,7 +87,7 @@ private enum PrivateTokenKey: RequestContextKey {
     typealias Value = String
 }
 
-private enum DiagnosticLabelKey: DiagnosticRequestContextKey {
+enum DiagnosticLabelKey: DiagnosticRequestContextKey {
     typealias Value = String
 
     static func diagnosticDescription(for value: String) -> String {

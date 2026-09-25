@@ -34,6 +34,7 @@ struct BodyEncodingAndResponseDecodingTests {
         let sentRequest = try #require(await (transport.recordedRequests()).first)
         #expect(sentRequest.httpRequest.url?.query == "trace=1")
         #expect(headerValues(.authorization, in: sentRequest.httpRequest.headerFields) == ["request-token"])
+        #expect(headerValues(.contentType, in: sentRequest.httpRequest.headerFields).isEmpty)
         if case let .data(bytes) = sentRequest.body {
             #expect(bytes == payload)
             let urlRequest = try #require(makeURLRequest(sentRequest, assumesHTTP3Capable: nil))
@@ -278,6 +279,7 @@ struct BodyEncodingAndResponseDecodingTests {
         _ = try await client.send(request)
         #expect(encodingCalls.withLock { $0 } == 1)
         let sentRequest = try #require(await (transport.recordedRequests()).first)
+        #expect(headerValues(.contentType, in: sentRequest.httpRequest.headerFields).isEmpty)
         if case let .data(bytes) = sentRequest.body {
             #expect(bytes == Data([3, 4]))
         } else {
