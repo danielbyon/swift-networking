@@ -1,0 +1,46 @@
+Sources/Networking/AttemptMetrics.swift
+  s_4bfce43fdecae9::t_a3b44dc1d88b0b 9,162
+  s_4bfce43fdecae9::t_65efcebc9f52fe 153
+  s_4bfce43fdecae9::t_7d89f5f6707375 104,109
+  s_4bfce43fdecae9::t_d7bc3d076679f5 163
+  s_4bfce43fdecae9::t_a58c9a6ea71571 1-8,10-103,105-108,110-152,154-161,164
+Sources/Networking/ResponseValidationPolicy.swift
+  s_4bfce43fdecae9::t_10af0e78063f67 112,118
+  s_4bfce43fdecae9::t_c34b326eb4aa5f 102-104
+Sources/Networking/NetworkClient.swift
+  s_4bfce43fdecae9::t_961df38e361189 247,252
+  s_4bfce43fdecae9::t_a3b44dc1d88b0b 11,15,19-22,24-27,29-30,135-137,139-143,149-157,161,164-169
+  s_4bfce43fdecae9::t_7b497894cc191c 812-828,830-844,854-863,865-874,881,898
+  s_4bfce43fdecae9::t_7d89f5f6707375 18,23,251,829
+  s_4bfce43fdecae9::t_d7bc3d076679f5 28,138,148,158,163
+  s_4bfce43fdecae9::t_6806388629f5ea 16,170,172-204,207,209-221,232-233,241-242,248-249,259-269
+  s_4bfce43fdecae9::t_035f225abe6a5d 171,205-206,208,223-231,234,236-240,243-246,250,253-258,270
+  s_4bfce43fdecae9::t_df38bbb3d67b11 17
+Tests/NetworkingTests/AttemptMetricsTests.swift
+  s_4bfce43fdecae9::t_f06b72d29e4875 82-121,205-206,208-220,245-257
+  s_4bfce43fdecae9::t_7bc32b4373109e 122-136,200-204,221-228,235-236
+  s_4bfce43fdecae9::t_e4d3fc255d8e70 50,60-61,81
+  s_4bfce43fdecae9::t_5dadd33e8e0398 51-59,62-80
+  s_4bfce43fdecae9::t_a76850b35b8b38 179-181
+  s_4bfce43fdecae9::t_dadb2ed74a5879 137-178,182-199,207,229-234,237-244
+  s_4bfce43fdecae9::t_7477fb45e5cf4c 1-7,10-12
+  s_4bfce43fdecae9::t_46576741a3bdb2 8-9,13-49,258
+Sources/Networking/Response.swift
+  s_4bfce43fdecae9::t_10af0e78063f67 21-23,31,37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5ff7002bfb52dfc6024873b767bae9708e0b2e04",
+  "prompts": {},
+  "sessions": {
+    "s_4bfce43fdecae9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d59f-6d57-77c2-9c4a-1c0387fb8f03",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
