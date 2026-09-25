@@ -239,6 +239,114 @@ update_release() {
     cleanup_exit
 }
 
+release_supports_configured() {
+    "$release_root/bin/swift-tooling" --capabilities 2>/dev/null \
+        | grep -Fxq 'configured-exec=1'
+}
+
+write_legacy_local_config() {
+    local target=$1
+    {
+        printf 'SWIFT_TOOLS_ROOT=%q\n' "$SWIFT_TOOLS_ROOT"
+        printf 'SWIFT_TOOLS_SOURCE_PATHS=('
+        if [[ "${#SWIFT_TOOLS_SOURCE_PATHS[@]}" -gt 0 ]]; then
+            printf '%q ' "${SWIFT_TOOLS_SOURCE_PATHS[@]}"
+        fi
+        printf ')\n'
+        printf 'SWIFT_TOOLS_SWIFTFORMAT_CONFIG=%q\n' "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG"
+        printf 'SWIFT_TOOLS_SWIFTLINT_CONFIG=%q\n' "$SWIFT_TOOLS_SWIFTLINT_CONFIG"
+        printf 'SWIFT_TOOLS_COMMAND_PREFIX=('
+        if [[ "${#SWIFT_TOOLS_COMMAND_PREFIX[@]}" -gt 0 ]]; then
+            printf '%q ' "${SWIFT_TOOLS_COMMAND_PREFIX[@]}"
+        fi
+        printf ')\n'
+    } > "$target"
+}
+
+run_legacy_configured() {
+    [[ "$#" -ge 1 ]] || die 'configured requires swiftformat or swiftlint'
+    local tool=$1
+    shift
+    local temporary_root
+    local generated_local_config
+    local status=0
+    temporary_root=$(mktemp -d "${TMPDIR:-/tmp}/swift-tooling-config.XXXXXX")
+    cleanup_root="$temporary_root"
+    generated_local_config="$temporary_root/swift-tools-local.sh"
+
+    # Resolve the consumer configuration once. Legacy releases source the
+    # generated declarative snapshot, so they retain source paths, overlays,
+    # and command prefixes without evaluating consumer code a second time.
+    SWIFT_TOOLS_ROOT="$repository_root"
+    SWIFT_TOOLS_SOURCE_PATHS=()
+    SWIFT_TOOLS_SWIFTFORMAT_CONFIG=''
+    SWIFT_TOOLS_SWIFTLINT_CONFIG=''
+    SWIFT_TOOLS_COMMAND_PREFIX=()
+    if [[ -f "$repository_root/Scripts/swift-tools-local.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "$repository_root/Scripts/swift-tools-local.sh"
+    fi
+    if [[ -n "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG" \
+        && "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG" != /* ]]; then
+        SWIFT_TOOLS_SWIFTFORMAT_CONFIG="$repository_root/$SWIFT_TOOLS_SWIFTFORMAT_CONFIG"
+    fi
+    if [[ -n "$SWIFT_TOOLS_SWIFTLINT_CONFIG" \
+        && "$SWIFT_TOOLS_SWIFTLINT_CONFIG" != /* ]]; then
+        SWIFT_TOOLS_SWIFTLINT_CONFIG="$repository_root/$SWIFT_TOOLS_SWIFTLINT_CONFIG"
+    fi
+    if [[ -n "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG" ]]; then
+        [[ -f "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG" ]] \
+            || die "SwiftFormat config is missing: $SWIFT_TOOLS_SWIFTFORMAT_CONFIG"
+    fi
+    if [[ -n "$SWIFT_TOOLS_SWIFTLINT_CONFIG" ]]; then
+        [[ -f "$SWIFT_TOOLS_SWIFTLINT_CONFIG" ]] \
+            || die "SwiftLint config is missing: $SWIFT_TOOLS_SWIFTLINT_CONFIG"
+    fi
+    write_legacy_local_config "$generated_local_config"
+
+    case "$tool" in
+        swiftlint)
+            [[ "$#" -ge 1 ]] || die 'configured SwiftLint execution requires a subcommand'
+            local subcommand=$1
+            shift
+            local args=(
+                --root "$repository_root"
+                --release-root "$release_root"
+                --local-config "$generated_local_config"
+                exec swiftlint "$subcommand"
+                --config "$release_root/config/swiftlint.base.yml"
+            )
+            if [[ -n "$SWIFT_TOOLS_SWIFTLINT_CONFIG" ]]; then
+                args+=(--config "$SWIFT_TOOLS_SWIFTLINT_CONFIG")
+            fi
+            args+=("$@")
+            "$release_root/bin/swift-tooling" "${args[@]}" || status=$?
+            cleanup_exit
+            return "$status"
+            ;;
+        swiftformat)
+            local effective_config
+            effective_config="$temporary_root/swiftformat.effective"
+            {
+                cat "$release_root/config/swiftformat.base"
+                if [[ -n "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG" ]]; then
+                    cat "$SWIFT_TOOLS_SWIFTFORMAT_CONFIG"
+                fi
+            } > "$effective_config"
+            "$release_root/bin/swift-tooling" \
+                --root "$repository_root" \
+                --release-root "$release_root" \
+                --local-config "$generated_local_config" \
+                exec swiftformat --config "$effective_config" "$@" || status=$?
+            cleanup_exit
+            return "$status"
+            ;;
+        *)
+            die "unsupported configured tool: $tool"
+            ;;
+    esac
+}
+
 case "${1:-}" in
     update)
         shift
@@ -256,12 +364,26 @@ case "${1:-}" in
             --local-config "$repository_root/Scripts/swift-tools-local.sh" \
             "$command" "$@"
         ;;
+    configured)
+        shift
+        ensure_release
+        if release_supports_configured; then
+            exec "$release_root/bin/swift-tooling" \
+                --root "$repository_root" \
+                --release-root "$release_root" \
+                --local-config "$repository_root/Scripts/swift-tools-local.sh" \
+                configured "$@"
+        fi
+        run_legacy_configured "$@"
+        ;;
     help|--help|-h|'')
         cat <<'USAGE'
-Usage: Scripts/swift-tools.sh <bootstrap|format|lint|exec|update>
+Usage: Scripts/swift-tools.sh <bootstrap|format|lint|configured|exec|update>
 
 The release version and checksum are recorded in Scripts/swift-tools.lock.
 Project-specific paths and wrapper settings live in Scripts/swift-tools-local.sh.
+SwiftLint and SwiftFormat config paths are optional overlays; the shared release
+baseline is used when a repository does not define one.
 USAGE
         ;;
     *)
