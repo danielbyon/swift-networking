@@ -8,9 +8,26 @@
 import Foundation
 import HTTPTypes
 import HTTPTypesFoundation
+import Synchronization
 
 package protocol NetworkTransport: Sendable {
     func execute(_ request: TransportRequest) async throws -> (Data, HTTPResponse)
+    func executeWithMetrics(_ request: TransportRequest) async -> NetworkTransportResult
+}
+
+extension NetworkTransport {
+    /// Adapts transports that expose only the original tuple-returning operation.
+    ///
+    /// The caught error is stored directly so the client can rethrow the same value without
+    /// replacing it with a metrics wrapper.
+    package func executeWithMetrics(_ request: TransportRequest) async -> NetworkTransportResult {
+        do {
+            let (data, response) = try await execute(request)
+            return .success(data: data, response: response, rawTaskMetrics: nil)
+        } catch {
+            return .failure(error: error, rawTaskMetrics: nil, didStartTask: true)
+        }
+    }
 }
 
 /// Creates a foreground session configuration using the client's policy defaults.
@@ -115,19 +132,142 @@ private struct URLSessionTransport: NetworkTransport {
     }
 
     func execute(_ request: TransportRequest) async throws -> (Data, HTTPResponse) {
+        switch await executeWithMetrics(request) {
+        case let .success(data, response, _):
+            (data, response)
+        case let .failure(error, _, _):
+            throw error
+        }
+    }
+
+    func executeWithMetrics(_ request: TransportRequest) async -> NetworkTransportResult {
         guard let urlRequest = makeURLRequest(
             request,
             assumesHTTP3Capable: assumesHTTP3Capable,
         ) else {
-            throw URLError(.badURL)
+            return .failure(error: URLError(.badURL), rawTaskMetrics: nil, didStartTask: false)
         }
 
-        let (data, urlResponse) = try await session.data(for: urlRequest)
+        let delegate = URLSessionTaskMetricsDelegate()
+        let data: Data
+        let urlResponse: URLResponse
+        do {
+            (data, urlResponse) = try await session.data(for: urlRequest, delegate: delegate)
+        } catch {
+            let rawTaskMetrics = await delegate.taskMetricsAfterCompletion()
+            return .failure(error: error, rawTaskMetrics: rawTaskMetrics, didStartTask: true)
+        }
+
+        let rawTaskMetrics = await delegate.taskMetricsAfterCompletion()
         guard let response = (urlResponse as? HTTPURLResponse)?.httpResponse else {
-            throw URLError(.badServerResponse)
+            return .failure(error: URLError(.badServerResponse), rawTaskMetrics: rawTaskMetrics, didStartTask: true)
         }
 
-        return (data, response)
+        return .success(data: data, response: response, rawTaskMetrics: rawTaskMetrics)
+    }
+}
+
+/// Tracks task completion separately from completion of metrics collection.
+///
+/// Foundation may deliver these lifecycle callbacks in either order. A result becomes available
+/// only after both events have arrived, so task completion cannot discard a later metrics value.
+struct TaskMetricsCollectionState<Metrics: Sendable>: Sendable {
+    private var didCompleteTask = false
+    private var didFinishCollecting = false
+    private var metrics: Metrics?
+
+    mutating func taskDidComplete() {
+        didCompleteTask = true
+    }
+
+    mutating func finishCollecting(_ metrics: Metrics?) {
+        guard didFinishCollecting == false else {
+            return
+        }
+
+        self.metrics = metrics
+        didFinishCollecting = true
+    }
+
+    var result: Metrics?? {
+        guard didCompleteTask, didFinishCollecting else {
+            return nil
+        }
+
+        return .some(metrics)
+    }
+}
+
+/// Coordinates task completion with the delegate's metrics collection callback.
+///
+/// A mutex protects the lifecycle state and waiting continuations, including when callbacks arrive
+/// in either order or collection explicitly finishes without metrics.
+final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sendable {
+    private struct State: Sendable {
+        var metricsCollection = TaskMetricsCollectionState<URLSessionTaskMetrics>()
+        var waiters: [CheckedContinuation<URLSessionTaskMetrics?, Never>] = []
+
+        mutating func takeReadyWaiters() -> (
+            URLSessionTaskMetrics??,
+            [CheckedContinuation<URLSessionTaskMetrics?, Never>],
+        ) {
+            let result = metricsCollection.result
+            guard result != nil else {
+                return (nil, [])
+            }
+
+            let readyWaiters = waiters
+            waiters.removeAll()
+            return (result, readyWaiters)
+        }
+    }
+
+    private let state = Mutex(State())
+
+    func urlSession(
+        _: URLSession,
+        task _: URLSessionTask,
+        didFinishCollecting metrics: URLSessionTaskMetrics,
+    ) {
+        state.withLock { $0.metricsCollection.finishCollecting(metrics) }
+        resumeReadyWaiters()
+    }
+
+    func urlSession(
+        _: URLSession,
+        task _: URLSessionTask,
+        didCompleteWithError _: (any Error)?,
+    ) {
+        state.withLock { $0.metricsCollection.taskDidComplete() }
+        resumeReadyWaiters()
+    }
+
+    func taskMetricsAfterCompletion() async -> URLSessionTaskMetrics? {
+        await withCheckedContinuation { continuation in
+            let readyMetrics = state.withLock { storage -> URLSessionTaskMetrics?? in
+                if let readyMetrics = storage.metricsCollection.result {
+                    return .some(readyMetrics)
+                }
+
+                storage.waiters.append(continuation)
+                return nil
+            }
+
+            if let readyMetrics {
+                continuation.resume(returning: readyMetrics)
+            }
+        }
+    }
+
+    private func resumeReadyWaiters() {
+        let (readyMetrics, waiters) = state.withLock { $0.takeReadyWaiters() }
+        guard let readyMetrics else {
+            return
+        }
+
+        for waiter in waiters {
+            waiter.resume(returning: readyMetrics)
+        }
     }
 }
 
@@ -669,7 +809,39 @@ public final class NetworkClient: Sendable {
                 httpRequest: adaptedRequest,
                 body: bodyInspection,
             )
-            let (data, httpResponse) = try await networkTransport.execute(transportRequest)
+            var attempts: [AttemptMetrics] = []
+            let attemptNumber: UInt = 1
+            let transportResult = await networkTransport.executeWithMetrics(transportRequest)
+            let data: Data
+            let httpResponse: HTTPResponse
+            let normalizedMetrics: NormalizedAttemptMetrics
+            let rawTaskMetrics: URLSessionTaskMetrics?
+            switch transportResult {
+            case let .success(responseData, response, taskMetrics):
+                data = responseData
+                httpResponse = response
+                rawTaskMetrics = taskMetrics
+                normalizedMetrics = NormalizedAttemptMetrics(taskMetrics: taskMetrics)
+            case let .failure(error, taskMetrics, didStartTask):
+                guard didStartTask else {
+                    throw error
+                }
+
+                rawTaskMetrics = taskMetrics
+                normalizedMetrics = NormalizedAttemptMetrics(taskMetrics: taskMetrics)
+                attempts.append(
+                    AttemptMetrics(
+                        requestID: requestID,
+                        attemptNumber: attemptNumber,
+                        normalizedMetrics: normalizedMetrics,
+                        outcome: .transportFailure,
+                        diagnosticReason: String(describing: error),
+                        rawTaskMetrics: rawTaskMetrics,
+                    ),
+                )
+                throw error
+            }
+
             let validationContext = ResponseValidationContext(
                 httpResponse: httpResponse,
                 receivedBody: .data(data),
@@ -679,14 +851,34 @@ public final class NetworkClient: Sendable {
             let validationPolicy = request.responseValidationPolicy ?? clientResponseValidationPolicy
             switch validationPolicy.validate(validationContext) {
             case .accept:
-                break
+                attempts.append(
+                    AttemptMetrics(
+                        requestID: requestID,
+                        attemptNumber: attemptNumber,
+                        normalizedMetrics: normalizedMetrics,
+                        outcome: .acceptedResponse,
+                        diagnosticReason: nil,
+                        rawTaskMetrics: rawTaskMetrics,
+                    ),
+                )
             case let .reject(reason):
+                attempts.append(
+                    AttemptMetrics(
+                        requestID: requestID,
+                        attemptNumber: attemptNumber,
+                        normalizedMetrics: normalizedMetrics,
+                        outcome: .validationRejection,
+                        diagnosticReason: reason,
+                        rawTaskMetrics: rawTaskMetrics,
+                    ),
+                )
                 let retentionPolicy = request.validationErrorBodyRetentionPolicy
                     ?? clientValidationErrorBodyRetentionPolicy
                 throw ResponseValidationError(
                     httpResponse: httpResponse,
                     retainedBody: retentionPolicy.retain(data),
                     requestID: requestID,
+                    attempts: attempts,
                     reason: reason,
                 )
             }
@@ -703,6 +895,7 @@ public final class NetworkClient: Sendable {
                 value: value,
                 httpResponse: httpResponse,
                 requestID: requestID,
+                attempts: attempts,
                 retainedBody: retentionPolicy.retain(data),
             )
         }

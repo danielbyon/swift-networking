@@ -99,6 +99,9 @@ public struct ResponseValidationError: Error, Sendable {
     /// The identity of the logical execution that received the rejected response.
     public let requestID: RequestID
 
+    /// The transport attempts through and including the response rejected by validation.
+    public let attempts: [AttemptMetrics]
+
     /// The optional diagnostic reason returned by the validation policy.
     public let reason: String?
 
@@ -106,11 +109,13 @@ public struct ResponseValidationError: Error, Sendable {
         httpResponse: HTTPResponse,
         retainedBody: RetainedBody?,
         requestID: RequestID,
+        attempts: [AttemptMetrics],
         reason: String?,
     ) {
         self.httpResponse = httpResponse
         self.retainedBody = retainedBody
         self.requestID = requestID
+        self.attempts = attempts
         self.reason = reason
     }
 }
