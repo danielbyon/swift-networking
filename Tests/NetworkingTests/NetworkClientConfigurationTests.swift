@@ -63,6 +63,7 @@ struct NetworkClientConfigurationTests {
         let cache = URLCache(memoryCapacity: 1_024, diskCapacity: 0, diskPath: nil)
         let cookies = HTTPCookieStorage.shared
         let configuration = NetworkClient.Configuration(baseURL: baseURL)
+            .withRetryPolicy(RetryPolicy { $0.maximumRetries = 3 })
             .withURLCache(cache)
             .withHTTPCookieStorage(cookies)
             .withRequestTimeout(.seconds(5))
@@ -78,7 +79,13 @@ struct NetworkClientConfigurationTests {
             (configuration.withDefaultHeaders(HTTPFields()), .none),
             (configuration.withDefaultQueryItems([URLQueryItem(name: "new", value: "value")]), .none),
             (configuration.withURLQueryEncoderConfiguration(.init(arrayStrategy: .brackets)), .none),
+            (configuration.withJSONEncoderConfiguration { $0.outputFormatting = .sortedKeys }, .none),
+            (configuration.withJSONDecoderConfiguration { $0.keyDecodingStrategy = .convertFromSnakeCase }, .none),
             (configuration.withRequestIDGenerator(UUIDRequestIDGenerator()), .none),
+            (configuration.withRequestAdapter(AnyRequestAdapter(adapt: { $0.request })), .none),
+            (configuration.withResponseValidationPolicy(.custom { _ in .accept }), .none),
+            (configuration.withSuccessfulResponseBodyRetentionPolicy(.unlimited), .none),
+            (configuration.withValidationErrorBodyRetentionPolicy(.none), .none),
             (configuration.withURLCache(nil), .urlCache),
             (configuration.withHTTPCookieStorage(nil), .cookieStorage),
             (configuration.withRequestTimeout(nil), .requestTimeout),
@@ -94,6 +101,9 @@ struct NetworkClientConfigurationTests {
         for (copy, modifiedPolicy) in copies {
             expectUnmodifiedPolicies(in: copy, matching: configuration, except: modifiedPolicy)
         }
+
+        let replacement = configuration.withRetryPolicy(RetryPolicy { $0.maximumRetries = 9 })
+        #expect(replacement.retryPolicy.maximumRetries == 9)
     }
 
     @Test("Request and resource timeouts require positive durations")
@@ -210,6 +220,10 @@ private func expectUnmodifiedPolicies(
     if modifiedPolicy != .http3Preference {
         #expect(actual.assumesHTTP3Capable == expected.assumesHTTP3Capable)
     }
+    #expect(actual.retryPolicy.maximumRetries == expected.retryPolicy.maximumRetries)
+    #expect(actual.retryPolicy.retryableMethods == expected.retryPolicy.retryableMethods)
+    #expect(actual.retryPolicy.retryableStatusCodes == expected.retryPolicy.retryableStatusCodes)
+    #expect(actual.retryPolicy.retryableURLErrorCodes == expected.retryPolicy.retryableURLErrorCodes)
 }
 
 private func expectConfigurationFailures(

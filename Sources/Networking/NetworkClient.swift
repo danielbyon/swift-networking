@@ -10,6 +10,50 @@ import HTTPTypes
 import HTTPTypesFoundation
 import Synchronization
 
+private struct RetryDecisionResolution {
+    let customDecision: RetryPolicy.Decision
+    let shouldRetry: Bool
+    let wasForcedByCustomDecision: Bool
+}
+
+private func resolveRetryDecision(
+    policy: RetryPolicy,
+    context: RetryPolicy.Context,
+    retryCount: UInt,
+) -> RetryDecisionResolution? {
+    guard retryCount < policy.maximumRetries else {
+        return nil
+    }
+
+    let customDecision = policy.customDecision?(context) ?? .useBuiltInDecision
+    let shouldRetry =
+        switch customDecision {
+        case .useBuiltInDecision:
+            context.builtInDecision == .retry
+        case .retry:
+            true
+        case .doNotRetry:
+            false
+        }
+    return RetryDecisionResolution(
+        customDecision: customDecision,
+        shouldRetry: shouldRetry,
+        wasForcedByCustomDecision: customDecision == .retry && context.builtInDecision != .retry,
+    )
+}
+
+private func transportFailureRetryDiagnosticReason(
+    error: any Error,
+    classificationReason: RetryPolicy.Reason,
+    wasForcedByCustomDecision: Bool,
+) -> String {
+    let decisionSource = wasForcedByCustomDecision
+        ? "custom decision forced retry"
+        : "built-in classification selected retry"
+    return "transport error: \(String(describing: error)); \(decisionSource); "
+        + "built-in reason: \(String(describing: classificationReason))"
+}
+
 package protocol NetworkTransport: Sendable {
     func execute(_ request: TransportRequest) async throws -> (Data, HTTPResponse)
     func executeWithMetrics(_ request: TransportRequest) async -> NetworkTransportResult
@@ -370,6 +414,9 @@ public final class NetworkClient: Sendable {
         /// The default policy used to validate each final transport response.
         public let responseValidationPolicy: ResponseValidationPolicy
 
+        /// The default bounded retry policy, with retries disabled unless explicitly configured.
+        public let retryPolicy: RetryPolicy
+
         /// The default policy for retaining bodies of accepted responses.
         public let successfulResponseBodyRetentionPolicy: BodyRetentionPolicy
 
@@ -403,6 +450,7 @@ public final class NetworkClient: Sendable {
             allowsCellularAccess = nil
             cachePolicy = nil
             responseValidationPolicy = .successfulStatusCodes
+            retryPolicy = RetryPolicy()
             successfulResponseBodyRetentionPolicy = .none
             validationErrorBodyRetentionPolicy = .unlimited
             assumesHTTP3Capable = nil
@@ -427,6 +475,7 @@ public final class NetworkClient: Sendable {
             allowsCellularAccess: Bool?,
             cachePolicy: URLRequest.CachePolicy?,
             responseValidationPolicy: ResponseValidationPolicy,
+            retryPolicy: RetryPolicy,
             successfulResponseBodyRetentionPolicy: BodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: BodyRetentionPolicy,
             assumesHTTP3Capable: Bool?,
@@ -449,6 +498,7 @@ public final class NetworkClient: Sendable {
             self.allowsCellularAccess = allowsCellularAccess
             self.cachePolicy = cachePolicy
             self.responseValidationPolicy = responseValidationPolicy
+            self.retryPolicy = retryPolicy
             self.successfulResponseBodyRetentionPolicy = successfulResponseBodyRetentionPolicy
             self.validationErrorBodyRetentionPolicy = validationErrorBodyRetentionPolicy
             self.assumesHTTP3Capable = assumesHTTP3Capable
@@ -594,6 +644,11 @@ public final class NetworkClient: Sendable {
             copying(responseValidationPolicy: .set(policy))
         }
 
+        /// Returns a copy with a replacement client-wide retry policy.
+        public func withRetryPolicy(_ policy: RetryPolicy) -> Self {
+            copying(retryPolicy: .set(policy))
+        }
+
         /// Returns a copy with a replacement accepted-response body-retention policy.
         public func withSuccessfulResponseBodyRetentionPolicy(_ policy: BodyRetentionPolicy) -> Self {
             copying(successfulResponseBodyRetentionPolicy: .set(policy))
@@ -641,6 +696,7 @@ public final class NetworkClient: Sendable {
             responseValidationPolicy responseValidationPolicyUpdate: ConfigurationFieldUpdate<
                 ResponseValidationPolicy,
             > = .unchanged,
+            retryPolicy retryPolicyUpdate: ConfigurationFieldUpdate<RetryPolicy> = .unchanged,
             successfulResponseBodyRetentionPolicy successfulResponseBodyRetentionPolicyUpdate: ConfigurationFieldUpdate<
                 BodyRetentionPolicy,
             > = .unchanged,
@@ -678,6 +734,7 @@ public final class NetworkClient: Sendable {
                 allowsCellularAccess: allowsCellularAccessUpdate.applying(to: allowsCellularAccess),
                 cachePolicy: cachePolicyUpdate.applying(to: cachePolicy),
                 responseValidationPolicy: responseValidationPolicyUpdate.applying(to: responseValidationPolicy),
+                retryPolicy: retryPolicyUpdate.applying(to: retryPolicy),
                 successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicyUpdate.applying(
                     to: successfulResponseBodyRetentionPolicy,
                 ),
@@ -751,6 +808,7 @@ public final class NetworkClient: Sendable {
         let clientJSONEncoderConfiguration = configuration.jsonEncoderConfiguration
         let clientJSONDecoderConfiguration = configuration.jsonDecoderConfiguration
         let clientResponseValidationPolicy = configuration.responseValidationPolicy
+        let retryPolicy = request.retryPolicy ?? configuration.retryPolicy
         let clientSuccessfulResponseBodyRetentionPolicy = configuration.successfulResponseBodyRetentionPolicy
         let clientValidationErrorBodyRetentionPolicy = configuration.validationErrorBodyRetentionPolicy
         let requestAdapters = configuration.requestAdapters
@@ -773,131 +831,231 @@ public final class NetworkClient: Sendable {
                 requestQueryItems: request.requestQueryItems,
                 requestID: requestID,
             )
-            let preparedBody = try request.body?.prepare(
-                clientJSONEncoderConfiguration: clientJSONEncoderConfiguration,
-                endpointJSONEncoderConfiguration: request.jsonEncoderConfiguration,
-            ) ?? .none
-            var inferredHeaders = preparedBody.inferredHeaders
-            if let inferredAccept = request.response.inferredAccept {
-                inferredHeaders[fields: .accept] = [HTTPField(name: .accept, value: inferredAccept)]
-            }
-            let headerFields = HeaderComposer.compose(
-                libraryInferred: inferredHeaders,
-                clientDefaults: clientDefaultHeaders,
-                endpoint: request.endpointHeaders,
-                request: request.requestHeaders,
-            )
-            let httpRequest = HTTPRequest(method: request.method, url: url, headerFields: headerFields)
-            if case .file = preparedBody {
-                throw RequestConstructionError(requestID: requestID, reason: .unsupportedOperationBodyCombination)
-            }
-
-            let bodyInspection = preparedBody.inspection
-            var adaptedRequest = httpRequest
-            for adapter in requestAdapters {
-                adaptedRequest = try await adapter.adapt(
-                    RequestAdaptationContext(
-                        request: adaptedRequest,
-                        body: bodyInspection,
-                        requestID: requestID,
-                        context: request.context,
-                    ),
-                )
-            }
-
-            let transportRequest = TransportRequest(
-                httpRequest: adaptedRequest,
-                body: bodyInspection,
-            )
             var attempts: [AttemptMetrics] = []
-            let attemptNumber: UInt = 1
-            let transportResult = await networkTransport.executeWithMetrics(transportRequest)
-            let data: Data
-            let httpResponse: HTTPResponse
-            let normalizedMetrics: NormalizedAttemptMetrics
-            let rawTaskMetrics: URLSessionTaskMetrics?
-            switch transportResult {
-            case let .success(responseData, response, taskMetrics):
-                data = responseData
-                httpResponse = response
-                rawTaskMetrics = taskMetrics
-                normalizedMetrics = NormalizedAttemptMetrics(taskMetrics: taskMetrics)
-            case let .failure(error, taskMetrics, didStartTask):
-                guard didStartTask else {
-                    throw error
+            var attemptNumber: UInt = 0
+            var retryCount: UInt = 0
+
+            while true {
+                try Task.checkCancellation()
+
+                let preparedBody = try request.body?.prepare(
+                    clientJSONEncoderConfiguration: clientJSONEncoderConfiguration,
+                    endpointJSONEncoderConfiguration: request.jsonEncoderConfiguration,
+                ) ?? .none
+                var inferredHeaders = preparedBody.inferredHeaders
+                if let inferredAccept = request.response.inferredAccept {
+                    inferredHeaders[fields: .accept] = [HTTPField(name: .accept, value: inferredAccept)]
+                }
+                let headerFields = HeaderComposer.compose(
+                    libraryInferred: inferredHeaders,
+                    clientDefaults: clientDefaultHeaders,
+                    endpoint: request.endpointHeaders,
+                    request: request.requestHeaders,
+                )
+                let httpRequest = HTTPRequest(method: request.method, url: url, headerFields: headerFields)
+                if case .file = preparedBody {
+                    throw RequestConstructionError(requestID: requestID, reason: .unsupportedOperationBodyCombination)
                 }
 
-                rawTaskMetrics = taskMetrics
-                normalizedMetrics = NormalizedAttemptMetrics(taskMetrics: taskMetrics)
-                attempts.append(
-                    AttemptMetrics(
-                        requestID: requestID,
-                        attemptNumber: attemptNumber,
-                        normalizedMetrics: normalizedMetrics,
-                        outcome: .transportFailure,
-                        diagnosticReason: String(describing: error),
-                        rawTaskMetrics: rawTaskMetrics,
-                    ),
-                )
-                throw error
-            }
+                let bodyInspection = preparedBody.inspection
+                var adaptedRequest = httpRequest
+                for adapter in requestAdapters {
+                    adaptedRequest = try await adapter.adapt(
+                        RequestAdaptationContext(
+                            request: adaptedRequest,
+                            body: bodyInspection,
+                            requestID: requestID,
+                            context: request.context,
+                        ),
+                    )
+                }
 
-            let validationContext = ResponseValidationContext(
-                httpResponse: httpResponse,
-                receivedBody: .data(data),
-                requestID: requestID,
-                requestContext: request.context,
-            )
-            let validationPolicy = request.responseValidationPolicy ?? clientResponseValidationPolicy
-            switch validationPolicy.validate(validationContext) {
-            case .accept:
-                attempts.append(
-                    AttemptMetrics(
-                        requestID: requestID,
-                        attemptNumber: attemptNumber,
-                        normalizedMetrics: normalizedMetrics,
-                        outcome: .acceptedResponse,
-                        diagnosticReason: nil,
-                        rawTaskMetrics: rawTaskMetrics,
-                    ),
+                try Task.checkCancellation()
+                let nextAttemptNumber = attemptNumber + 1
+                let transportRequest = TransportRequest(
+                    httpRequest: adaptedRequest,
+                    body: bodyInspection,
                 )
-            case let .reject(reason):
-                attempts.append(
-                    AttemptMetrics(
-                        requestID: requestID,
-                        attemptNumber: attemptNumber,
-                        normalizedMetrics: normalizedMetrics,
-                        outcome: .validationRejection,
-                        diagnosticReason: reason,
-                        rawTaskMetrics: rawTaskMetrics,
-                    ),
-                )
-                let retentionPolicy = request.validationErrorBodyRetentionPolicy
-                    ?? clientValidationErrorBodyRetentionPolicy
-                throw ResponseValidationError(
-                    httpResponse: httpResponse,
-                    retainedBody: retentionPolicy.retain(data),
-                    requestID: requestID,
-                    attempts: attempts,
-                    reason: reason,
-                )
-            }
+                let transportResult = await networkTransport.executeWithMetrics(transportRequest)
 
-            let value = try request.response.decode(
-                data,
-                response: httpResponse,
-                clientJSONDecoderConfiguration: clientJSONDecoderConfiguration,
-                endpointJSONDecoderConfiguration: request.jsonDecoderConfiguration,
-            )
-            let retentionPolicy = request.successfulResponseBodyRetentionPolicy
-                ?? clientSuccessfulResponseBodyRetentionPolicy
-            return Response(
-                value: value,
-                httpResponse: httpResponse,
-                requestID: requestID,
-                attempts: attempts,
-                retainedBody: retentionPolicy.retain(data),
-            )
+                switch transportResult {
+                case let .success(data, httpResponse, rawTaskMetrics):
+                    attemptNumber = nextAttemptNumber
+                    let normalizedMetrics = NormalizedAttemptMetrics(taskMetrics: rawTaskMetrics)
+                    try Task.checkCancellation()
+
+                    let classification = retryPolicy.builtInClassification(
+                        method: adaptedRequest.method,
+                        response: httpResponse,
+                    )
+                    let retryContext = RetryPolicy.Context(
+                        builtInDecision: classification.decision,
+                        builtInReason: classification.reason,
+                        method: adaptedRequest.method,
+                        response: httpResponse,
+                        transportError: nil,
+                        context: request.context,
+                        requestID: requestID,
+                        attemptNumber: attemptNumber,
+                        retryCount: retryCount,
+                    )
+                    try Task.checkCancellation()
+                    let retryResolution = resolveRetryDecision(
+                        policy: retryPolicy,
+                        context: retryContext,
+                        retryCount: retryCount,
+                    )
+                    try Task.checkCancellation()
+
+                    if let retryResolution, retryResolution.shouldRetry {
+                        attempts.append(
+                            AttemptMetrics(
+                                requestID: requestID,
+                                attemptNumber: attemptNumber,
+                                normalizedMetrics: normalizedMetrics,
+                                outcome: .retryScheduled,
+                                diagnosticReason: retryResolution.customDecision == .retry
+                                    ? "custom retry decision: \(classification.reason)"
+                                    : "built-in retry decision: \(classification.reason)",
+                                rawTaskMetrics: rawTaskMetrics,
+                            ),
+                        )
+                        retryCount += 1
+                        continue
+                    }
+
+                    let validationContext = ResponseValidationContext(
+                        httpResponse: httpResponse,
+                        receivedBody: .data(data),
+                        requestID: requestID,
+                        requestContext: request.context,
+                    )
+                    let validationPolicy = request.responseValidationPolicy ?? clientResponseValidationPolicy
+                    switch validationPolicy.validate(validationContext) {
+                    case .accept:
+                        attempts.append(
+                            AttemptMetrics(
+                                requestID: requestID,
+                                attemptNumber: attemptNumber,
+                                normalizedMetrics: normalizedMetrics,
+                                outcome: .acceptedResponse,
+                                diagnosticReason: nil,
+                                rawTaskMetrics: rawTaskMetrics,
+                            ),
+                        )
+                    case let .reject(reason):
+                        attempts.append(
+                            AttemptMetrics(
+                                requestID: requestID,
+                                attemptNumber: attemptNumber,
+                                normalizedMetrics: normalizedMetrics,
+                                outcome: .validationRejection,
+                                diagnosticReason: reason,
+                                rawTaskMetrics: rawTaskMetrics,
+                            ),
+                        )
+                        let retentionPolicy = request.validationErrorBodyRetentionPolicy
+                            ?? clientValidationErrorBodyRetentionPolicy
+                        throw ResponseValidationError(
+                            httpResponse: httpResponse,
+                            retainedBody: retentionPolicy.retain(data),
+                            requestID: requestID,
+                            attempts: attempts,
+                            reason: reason,
+                        )
+                    }
+
+                    let value = try request.response.decode(
+                        data,
+                        response: httpResponse,
+                        clientJSONDecoderConfiguration: clientJSONDecoderConfiguration,
+                        endpointJSONDecoderConfiguration: request.jsonDecoderConfiguration,
+                    )
+                    let retentionPolicy = request.successfulResponseBodyRetentionPolicy
+                        ?? clientSuccessfulResponseBodyRetentionPolicy
+                    return Response(
+                        value: value,
+                        httpResponse: httpResponse,
+                        requestID: requestID,
+                        attempts: attempts,
+                        retainedBody: retentionPolicy.retain(data),
+                    )
+
+                case let .failure(error, rawTaskMetrics, didStartTask):
+                    guard didStartTask else {
+                        throw error
+                    }
+
+                    attemptNumber = nextAttemptNumber
+                    let normalizedMetrics = NormalizedAttemptMetrics(taskMetrics: rawTaskMetrics)
+                    if error is CancellationError {
+                        attempts.append(
+                            AttemptMetrics(
+                                requestID: requestID,
+                                attemptNumber: attemptNumber,
+                                normalizedMetrics: normalizedMetrics,
+                                outcome: .transportFailure,
+                                diagnosticReason: String(describing: error),
+                                rawTaskMetrics: rawTaskMetrics,
+                            ),
+                        )
+                        throw CancellationError()
+                    }
+
+                    try Task.checkCancellation()
+
+                    let classification = retryPolicy.builtInClassification(
+                        method: adaptedRequest.method,
+                        transportError: error,
+                    )
+                    let retryContext = RetryPolicy.Context(
+                        builtInDecision: classification.decision,
+                        builtInReason: classification.reason,
+                        method: adaptedRequest.method,
+                        response: nil,
+                        transportError: error,
+                        context: request.context,
+                        requestID: requestID,
+                        attemptNumber: attemptNumber,
+                        retryCount: retryCount,
+                    )
+                    try Task.checkCancellation()
+                    let retryResolution = resolveRetryDecision(
+                        policy: retryPolicy,
+                        context: retryContext,
+                        retryCount: retryCount,
+                    )
+                    try Task.checkCancellation()
+
+                    let shouldRetry = retryResolution?.shouldRetry == true
+                    let diagnosticReason: String =
+                        if let retryResolution, retryResolution.shouldRetry {
+                            transportFailureRetryDiagnosticReason(
+                                error: error,
+                                classificationReason: classification.reason,
+                                wasForcedByCustomDecision: retryResolution.wasForcedByCustomDecision,
+                            )
+                        } else {
+                            String(describing: error)
+                        }
+                    attempts.append(
+                        AttemptMetrics(
+                            requestID: requestID,
+                            attemptNumber: attemptNumber,
+                            normalizedMetrics: normalizedMetrics,
+                            outcome: .transportFailure,
+                            diagnosticReason: diagnosticReason,
+                            rawTaskMetrics: rawTaskMetrics,
+                        ),
+                    )
+
+                    guard shouldRetry else {
+                        throw error
+                    }
+
+                    retryCount += 1
+                }
+            }
         }
     }
 

@@ -22,6 +22,7 @@ public struct Request<Output: Sendable>: Sendable {
     package let jsonEncoderConfiguration: JSONEncoderConfiguration
     package let jsonDecoderConfiguration: JSONDecoderConfiguration
     package let responseValidationPolicy: ResponseValidationPolicy?
+    package let retryPolicy: RetryPolicy?
     package let successfulResponseBodyRetentionPolicy: BodyRetentionPolicy?
     package let validationErrorBodyRetentionPolicy: BodyRetentionPolicy?
 
@@ -38,6 +39,7 @@ public struct Request<Output: Sendable>: Sendable {
         jsonEncoderConfiguration: @escaping JSONEncoderConfiguration = { _ in },
         jsonDecoderConfiguration: @escaping JSONDecoderConfiguration = { _ in },
         responseValidationPolicy: ResponseValidationPolicy? = nil,
+        retryPolicy: RetryPolicy? = nil,
         successfulResponseBodyRetentionPolicy: BodyRetentionPolicy? = nil,
         validationErrorBodyRetentionPolicy: BodyRetentionPolicy? = nil,
     ) {
@@ -53,6 +55,7 @@ public struct Request<Output: Sendable>: Sendable {
         self.jsonEncoderConfiguration = jsonEncoderConfiguration
         self.jsonDecoderConfiguration = jsonDecoderConfiguration
         self.responseValidationPolicy = responseValidationPolicy
+        self.retryPolicy = retryPolicy
         self.successfulResponseBodyRetentionPolicy = successfulResponseBodyRetentionPolicy
         self.validationErrorBodyRetentionPolicy = validationErrorBodyRetentionPolicy
     }
@@ -73,6 +76,7 @@ public struct Request<Output: Sendable>: Sendable {
             jsonEncoderConfiguration: endpoint.jsonEncoderConfiguration,
             jsonDecoderConfiguration: endpoint.jsonDecoderConfiguration,
             responseValidationPolicy: endpoint.responseValidationPolicy,
+            retryPolicy: endpoint.retryPolicy,
             successfulResponseBodyRetentionPolicy: endpoint.successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: endpoint.validationErrorBodyRetentionPolicy,
         )
@@ -92,6 +96,7 @@ public struct Request<Output: Sendable>: Sendable {
             jsonEncoderConfiguration: endpoint.jsonEncoderConfiguration,
             jsonDecoderConfiguration: endpoint.jsonDecoderConfiguration,
             responseValidationPolicy: endpoint.responseValidationPolicy,
+            retryPolicy: endpoint.retryPolicy,
             successfulResponseBodyRetentionPolicy: endpoint.successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: endpoint.validationErrorBodyRetentionPolicy,
         )
@@ -100,7 +105,7 @@ public struct Request<Output: Sendable>: Sendable {
     /// Binds endpoint input and a body value to a bodyful endpoint invocation.
     ///
     /// The endpoint input is captured immediately, while body encoding remains deferred until
-    /// each logical execution.
+    /// each transport attempt.
     ///
     /// - Parameters:
     ///   - endpoint: The reusable endpoint contract.
@@ -122,6 +127,7 @@ public struct Request<Output: Sendable>: Sendable {
             jsonEncoderConfiguration: endpoint.jsonEncoderConfiguration,
             jsonDecoderConfiguration: endpoint.jsonDecoderConfiguration,
             responseValidationPolicy: endpoint.responseValidationPolicy,
+            retryPolicy: endpoint.retryPolicy,
             successfulResponseBodyRetentionPolicy: endpoint.successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: endpoint.validationErrorBodyRetentionPolicy,
         )
@@ -130,7 +136,7 @@ public struct Request<Output: Sendable>: Sendable {
     /// Binds a body value to a no-input endpoint using only its constant route and query state.
     ///
     /// Input-derived route, query, or header builders are not invoked for `Never` input.
-    /// Body encoding remains deferred until each logical execution.
+    /// Body encoding remains deferred until each transport attempt.
     ///
     /// - Parameters:
     ///   - endpoint: The reusable no-input endpoint contract.
@@ -147,6 +153,7 @@ public struct Request<Output: Sendable>: Sendable {
             jsonEncoderConfiguration: endpoint.jsonEncoderConfiguration,
             jsonDecoderConfiguration: endpoint.jsonDecoderConfiguration,
             responseValidationPolicy: endpoint.responseValidationPolicy,
+            retryPolicy: endpoint.retryPolicy,
             successfulResponseBodyRetentionPolicy: endpoint.successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: endpoint.validationErrorBodyRetentionPolicy,
         )
@@ -177,6 +184,7 @@ public struct Request<Output: Sendable>: Sendable {
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
+            retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
         )
@@ -203,6 +211,7 @@ public struct Request<Output: Sendable>: Sendable {
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
+            retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
         )
@@ -229,6 +238,7 @@ public struct Request<Output: Sendable>: Sendable {
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
+            retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
         )
@@ -259,6 +269,7 @@ public struct Request<Output: Sendable>: Sendable {
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
+            retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
         )
@@ -279,6 +290,7 @@ public struct Request<Output: Sendable>: Sendable {
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: policy,
+            retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
         )
@@ -299,6 +311,7 @@ public struct Request<Output: Sendable>: Sendable {
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
+            retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: policy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
         )
@@ -319,8 +332,41 @@ public struct Request<Output: Sendable>: Sendable {
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
+            retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: policy,
         )
+    }
+
+    /// Returns a copy with a replacement retry policy for this request.
+    ///
+    /// The request policy replaces any endpoint policy, which in turn replaces the client policy.
+    public func retryPolicy(_ policy: RetryPolicy) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            requestQueryItems: requestQueryItems,
+            response: response,
+            endpointHeaders: endpointHeaders,
+            requestHeaders: requestHeaders,
+            context: context,
+            body: body,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: responseValidationPolicy,
+            retryPolicy: policy,
+            successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+        )
+    }
+
+    /// Returns a copy with a policy built from fresh default configuration.
+    ///
+    /// The builder replaces the request policy as a whole and does not inherit endpoint or client settings.
+    public func retryPolicy(
+        configure: @Sendable (inout RetryPolicy.Configuration) -> Void,
+    ) -> Self {
+        retryPolicy(RetryPolicy(configure: configure))
     }
 }

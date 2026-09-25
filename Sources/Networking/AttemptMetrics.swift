@@ -13,6 +13,9 @@ public enum AttemptOutcome: Sendable, Equatable, Hashable {
     /// The transport task failed before returning an HTTP response.
     case transportFailure
 
+    /// The HTTP response was consumed to schedule an ordinary retry before validation.
+    case retryScheduled
+
     /// The response passed validation.
     case acceptedResponse
 
@@ -127,7 +130,7 @@ public struct AttemptMetrics: Sendable, Equatable, Hashable {
     /// The final disposition of the task's response or transport operation.
     public let outcome: AttemptOutcome
 
-    /// A diagnostic explanation supplied by validation or transport, when available.
+    /// A diagnostic explanation supplied by retry selection, validation, or transport, when available.
     public let diagnosticReason: String?
 
     /// The complete Foundation metrics value collected for this task, when available.

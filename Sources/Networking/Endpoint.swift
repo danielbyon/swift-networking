@@ -23,6 +23,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
     package let jsonEncoderConfiguration: JSONEncoderConfiguration
     package let jsonDecoderConfiguration: JSONDecoderConfiguration
     package let responseValidationPolicy: ResponseValidationPolicy?
+    package let retryPolicy: RetryPolicy?
     package let successfulResponseBodyRetentionPolicy: BodyRetentionPolicy?
     package let validationErrorBodyRetentionPolicy: BodyRetentionPolicy?
     private let headerStorage: HeaderStorage
@@ -36,6 +37,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
         jsonEncoderConfiguration: @escaping JSONEncoderConfiguration = { _ in },
         jsonDecoderConfiguration: @escaping JSONDecoderConfiguration = { _ in },
         responseValidationPolicy: ResponseValidationPolicy? = nil,
+        retryPolicy: RetryPolicy? = nil,
         successfulResponseBodyRetentionPolicy: BodyRetentionPolicy? = nil,
         validationErrorBodyRetentionPolicy: BodyRetentionPolicy? = nil,
         headerStorage: HeaderStorage = .fixed(HTTPFields()),
@@ -48,6 +50,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
         self.jsonEncoderConfiguration = jsonEncoderConfiguration
         self.jsonDecoderConfiguration = jsonDecoderConfiguration
         self.responseValidationPolicy = responseValidationPolicy
+        self.retryPolicy = retryPolicy
         self.successfulResponseBodyRetentionPolicy = successfulResponseBodyRetentionPolicy
         self.validationErrorBodyRetentionPolicy = validationErrorBodyRetentionPolicy
         self.headerStorage = headerStorage
@@ -63,6 +66,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
+            retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             headerStorage: headerStorage,
@@ -152,6 +156,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             },
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
+            retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             headerStorage: headerStorage,
@@ -179,6 +184,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
                 configure(decoder)
             },
             responseValidationPolicy: responseValidationPolicy,
+            retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             headerStorage: headerStorage,
@@ -198,6 +204,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: policy,
+            retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             headerStorage: headerStorage,
@@ -215,6 +222,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
+            retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: policy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             headerStorage: headerStorage,
@@ -232,10 +240,40 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
+            retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: policy,
             headerStorage: headerStorage,
         )
+    }
+
+    /// Returns a copy with a replacement retry policy for requests created from this endpoint.
+    ///
+    /// The endpoint policy replaces the client policy. Requests can replace it again.
+    public func retryPolicy(_ policy: RetryPolicy) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            bodyEncoding: bodyEncoding,
+            response: response,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: responseValidationPolicy,
+            retryPolicy: policy,
+            successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+            headerStorage: headerStorage,
+        )
+    }
+
+    /// Returns a copy with a policy built from fresh default configuration.
+    ///
+    /// The builder replaces the endpoint policy as a whole and does not inherit client settings.
+    public func retryPolicy(
+        configure: @Sendable (inout RetryPolicy.Configuration) -> Void,
+    ) -> Self {
+        retryPolicy(RetryPolicy(configure: configure))
     }
 }
 
@@ -350,7 +388,7 @@ extension Endpoint where Body == Never {
 }
 
 extension Endpoint {
-    /// Creates a data endpoint that encodes its body for each logical execution.
+    /// Creates a data endpoint that prepares its body for each transport attempt.
     ///
     /// - Parameters:
     ///   - method: The explicit HTTP method for every invocation.

@@ -48,7 +48,7 @@ public struct BodyEncoding<Body: Sendable>: Sendable {
 }
 
 extension BodyEncoding where Body: Encodable {
-    /// Encodes the body as JSON using a fresh configured encoder for each execution.
+    /// Encodes the body as JSON using a fresh configured encoder for each transport attempt.
     ///
     /// - Parameter contentType: The inferred media type, defaulting to `application/json`.
     /// - Returns: A replayable JSON body encoding strategy.
@@ -89,7 +89,7 @@ extension BodyEncoding where Body == URL {
 extension BodyEncoding {
     /// Encodes the body through a synchronous replayable in-memory encoder.
     ///
-    /// The supplied closure runs during each execution. Its thrown errors propagate unchanged.
+    /// The supplied closure runs during each transport attempt. Its thrown errors propagate unchanged.
     ///
     /// - Parameter encode: A Sendable closure that converts the body into bytes.
     /// - Returns: A body encoding strategy backed by the supplied closure.
