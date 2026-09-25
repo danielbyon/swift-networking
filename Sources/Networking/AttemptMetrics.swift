@@ -24,6 +24,9 @@ public enum AttemptOutcome: Sendable, Equatable, Hashable {
 
     /// The response was rejected by the configured validation policy.
     case validationRejection
+
+    /// The transport task stopped because following another redirect would exceed its policy limit.
+    case redirectLimitExceeded
 }
 
 /// Normalized diagnostics for a single transport task.
@@ -167,4 +170,9 @@ package struct AttemptTransactionMetrics: Sendable {
 package enum NetworkTransportResult: Sendable {
     case success(data: Data, response: HTTPResponse, rawTaskMetrics: URLSessionTaskMetrics?)
     case failure(error: any Error, rawTaskMetrics: URLSessionTaskMetrics?, didStartTask: Bool)
+    case redirectLimitExceeded(
+        maximumRedirects: UInt,
+        lastResponse: HTTPResponse?,
+        rawTaskMetrics: URLSessionTaskMetrics?,
+    )
 }

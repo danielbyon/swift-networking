@@ -26,6 +26,7 @@ public struct Request<Output: Sendable>: Sendable {
     package let retryPolicy: RetryPolicy?
     package let successfulResponseBodyRetentionPolicy: BodyRetentionPolicy?
     package let validationErrorBodyRetentionPolicy: BodyRetentionPolicy?
+    package let redirectPolicy: RedirectPolicy?
 
     private init(
         method: HTTPRequest.Method,
@@ -44,6 +45,7 @@ public struct Request<Output: Sendable>: Sendable {
         retryPolicy: RetryPolicy? = nil,
         successfulResponseBodyRetentionPolicy: BodyRetentionPolicy? = nil,
         validationErrorBodyRetentionPolicy: BodyRetentionPolicy? = nil,
+        redirectPolicy: RedirectPolicy? = nil,
     ) {
         self.method = method
         self.route = route
@@ -61,6 +63,7 @@ public struct Request<Output: Sendable>: Sendable {
         self.retryPolicy = retryPolicy
         self.successfulResponseBodyRetentionPolicy = successfulResponseBodyRetentionPolicy
         self.validationErrorBodyRetentionPolicy = validationErrorBodyRetentionPolicy
+        self.redirectPolicy = redirectPolicy
     }
 
     /// Binds endpoint input to a bodyless endpoint and resolves its route.
@@ -83,6 +86,7 @@ public struct Request<Output: Sendable>: Sendable {
             retryPolicy: endpoint.retryPolicy,
             successfulResponseBodyRetentionPolicy: endpoint.successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: endpoint.validationErrorBodyRetentionPolicy,
+            redirectPolicy: endpoint.redirectPolicy,
         )
     }
 
@@ -104,6 +108,7 @@ public struct Request<Output: Sendable>: Sendable {
             retryPolicy: endpoint.retryPolicy,
             successfulResponseBodyRetentionPolicy: endpoint.successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: endpoint.validationErrorBodyRetentionPolicy,
+            redirectPolicy: endpoint.redirectPolicy,
         )
     }
 
@@ -136,6 +141,7 @@ public struct Request<Output: Sendable>: Sendable {
             retryPolicy: endpoint.retryPolicy,
             successfulResponseBodyRetentionPolicy: endpoint.successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: endpoint.validationErrorBodyRetentionPolicy,
+            redirectPolicy: endpoint.redirectPolicy,
         )
     }
 
@@ -163,6 +169,7 @@ public struct Request<Output: Sendable>: Sendable {
             retryPolicy: endpoint.retryPolicy,
             successfulResponseBodyRetentionPolicy: endpoint.successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: endpoint.validationErrorBodyRetentionPolicy,
+            redirectPolicy: endpoint.redirectPolicy,
         )
     }
 
@@ -195,6 +202,7 @@ public struct Request<Output: Sendable>: Sendable {
             retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+            redirectPolicy: redirectPolicy,
         )
     }
 
@@ -223,6 +231,7 @@ public struct Request<Output: Sendable>: Sendable {
             retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+            redirectPolicy: redirectPolicy,
         )
     }
 
@@ -251,6 +260,7 @@ public struct Request<Output: Sendable>: Sendable {
             retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+            redirectPolicy: redirectPolicy,
         )
     }
 
@@ -283,6 +293,7 @@ public struct Request<Output: Sendable>: Sendable {
             retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+            redirectPolicy: redirectPolicy,
         )
     }
 
@@ -305,6 +316,7 @@ public struct Request<Output: Sendable>: Sendable {
             retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+            redirectPolicy: redirectPolicy,
         )
     }
 
@@ -327,6 +339,7 @@ public struct Request<Output: Sendable>: Sendable {
             retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: policy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+            redirectPolicy: redirectPolicy,
         )
     }
 
@@ -349,6 +362,7 @@ public struct Request<Output: Sendable>: Sendable {
             retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: policy,
+            redirectPolicy: redirectPolicy,
         )
     }
 
@@ -373,6 +387,7 @@ public struct Request<Output: Sendable>: Sendable {
             retryPolicy: policy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+            redirectPolicy: redirectPolicy,
         )
     }
 
@@ -383,5 +398,30 @@ public struct Request<Output: Sendable>: Sendable {
         configure: @Sendable (inout RetryPolicy.Configuration) -> Void,
     ) -> Self {
         retryPolicy(RetryPolicy(configure: configure))
+    }
+
+    /// Returns a copy with a replacement redirect policy for this request.
+    ///
+    /// The request policy replaces the endpoint policy, which replaces the client policy.
+    public func redirectPolicy(_ policy: RedirectPolicy) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            requestQueryItems: requestQueryItems,
+            response: response,
+            authenticationRequirement: authenticationRequirement,
+            endpointHeaders: endpointHeaders,
+            requestHeaders: requestHeaders,
+            context: context,
+            body: body,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: responseValidationPolicy,
+            retryPolicy: retryPolicy,
+            successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+            redirectPolicy: policy,
+        )
     }
 }

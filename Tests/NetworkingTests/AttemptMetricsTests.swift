@@ -127,6 +127,8 @@ struct AttemptMetricsTests {
         switch await transport.executeWithMetrics(request) {
         case .success:
             Issue.record("Expected the legacy transport error to be captured")
+        case .redirectLimitExceeded:
+            Issue.record("Did not expect a redirect limit result")
         case let .failure(error, rawTaskMetrics, didStartTask):
             #expect(error as? AttemptTransportFailure == .expected)
             #expect(rawTaskMetrics == nil)
@@ -142,6 +144,8 @@ struct AttemptMetricsTests {
         switch await transport.executeWithMetrics(request) {
         case .success:
             Issue.record("Expected the metrics-aware transport to report its failure")
+        case .redirectLimitExceeded:
+            Issue.record("Did not expect a redirect limit result")
         case let .failure(error, rawTaskMetrics, didStartTask):
             #expect(error as? AttemptTransportFailure == .expected)
             #expect(rawTaskMetrics == nil)

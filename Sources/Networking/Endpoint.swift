@@ -25,6 +25,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
     package let jsonDecoderConfiguration: JSONDecoderConfiguration
     package let responseValidationPolicy: ResponseValidationPolicy?
     package let retryPolicy: RetryPolicy?
+    package let redirectPolicy: RedirectPolicy?
     package let successfulResponseBodyRetentionPolicy: BodyRetentionPolicy?
     package let validationErrorBodyRetentionPolicy: BodyRetentionPolicy?
     private let headerStorage: HeaderStorage
@@ -40,6 +41,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
         jsonDecoderConfiguration: @escaping JSONDecoderConfiguration = { _ in },
         responseValidationPolicy: ResponseValidationPolicy? = nil,
         retryPolicy: RetryPolicy? = nil,
+        redirectPolicy: RedirectPolicy? = nil,
         successfulResponseBodyRetentionPolicy: BodyRetentionPolicy? = nil,
         validationErrorBodyRetentionPolicy: BodyRetentionPolicy? = nil,
         headerStorage: HeaderStorage = .fixed(HTTPFields()),
@@ -54,6 +56,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
         self.jsonDecoderConfiguration = jsonDecoderConfiguration
         self.responseValidationPolicy = responseValidationPolicy
         self.retryPolicy = retryPolicy
+        self.redirectPolicy = redirectPolicy
         self.successfulResponseBodyRetentionPolicy = successfulResponseBodyRetentionPolicy
         self.validationErrorBodyRetentionPolicy = validationErrorBodyRetentionPolicy
         self.headerStorage = headerStorage
@@ -71,6 +74,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
             retryPolicy: retryPolicy,
+            redirectPolicy: redirectPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             headerStorage: headerStorage,
@@ -162,6 +166,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
             retryPolicy: retryPolicy,
+            redirectPolicy: redirectPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             headerStorage: headerStorage,
@@ -191,6 +196,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             },
             responseValidationPolicy: responseValidationPolicy,
             retryPolicy: retryPolicy,
+            redirectPolicy: redirectPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             headerStorage: headerStorage,
@@ -212,6 +218,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: policy,
             retryPolicy: retryPolicy,
+            redirectPolicy: redirectPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             headerStorage: headerStorage,
@@ -231,6 +238,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
             retryPolicy: retryPolicy,
+            redirectPolicy: redirectPolicy,
             successfulResponseBodyRetentionPolicy: policy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             headerStorage: headerStorage,
@@ -250,6 +258,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
             retryPolicy: retryPolicy,
+            redirectPolicy: redirectPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: policy,
             headerStorage: headerStorage,
@@ -271,6 +280,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
             retryPolicy: retryPolicy,
+            redirectPolicy: redirectPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             headerStorage: headerStorage,
@@ -292,6 +302,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
             retryPolicy: policy,
+            redirectPolicy: redirectPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             headerStorage: headerStorage,
@@ -305,6 +316,28 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
         configure: @Sendable (inout RetryPolicy.Configuration) -> Void,
     ) -> Self {
         retryPolicy(RetryPolicy(configure: configure))
+    }
+
+    /// Returns a copy with a replacement redirect policy for requests created from this endpoint.
+    ///
+    /// The endpoint policy replaces the client policy. Requests can replace it again.
+    public func redirectPolicy(_ policy: RedirectPolicy) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            bodyEncoding: bodyEncoding,
+            response: response,
+            authenticationRequirement: authenticationRequirement,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: responseValidationPolicy,
+            retryPolicy: retryPolicy,
+            redirectPolicy: policy,
+            successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+            headerStorage: headerStorage,
+        )
     }
 }
 
