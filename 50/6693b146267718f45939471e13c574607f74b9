@@ -1,0 +1,48 @@
+Sources/Networking/RetryTiming.swift
+  s_9c25743c2d0607::t_1ab6c57e3965f2 98
+  s_9c25743c2d0607::t_7f477c8e3162ea 152-155,167,169,176
+  s_9c25743c2d0607::t_0e1691c7ef5290 185,208
+  s_9c25743c2d0607::t_b7f4b40f40d30c 1-97,99-133,135-151,156-166,168,170-175,177-184,186-207,209-211
+  s_9c25743c2d0607::t_4c76930fee6112 134
+Tests/NetworkingTests/RetryPolicyTests.swift
+  s_9c25743c2d0607::t_fb9b34d6590674 43-45,51-53,66,68,94-95,97,99-101
+  s_9c25743c2d0607::t_3c04c04e8d7db6 96,98,102-108
+  s_9c25743c2d0607::t_5d9756a28f5684 19-21,36-42,46-50,54-65,67,69-93,109-127,161-219
+  s_9c25743c2d0607::t_8fec875d184887 128-160,220
+  s_2dd6bd4bf82082::t_2697acdeb8624c 221
+Sources/Networking/NetworkClient.swift
+  s_9c25743c2d0607::t_0e1691c7ef5290 820,943,950,952,1089,1096,1098
+  s_9c25743c2d0607::t_7a94019d7fb48a 753,766,778,790-794,796-800,803-807,810,940-942,944-949,951,1086-1088,1090-1095,1097
+Sources/Networking/RetryPolicy.swift
+  s_9c25743c2d0607::t_86ec0ecbe96197 11,16-56,149-157,173-175,193-201,222-224
+Tests/NetworkingTestSupportTests/NetworkingTestSupportTests.swift
+  s_9c25743c2d0607::t_11c62bb717a39a 281
+  s_9c25743c2d0607::t_fbb8e4ece634c6 117-220,222-280,282-329,331-341,343-346
+  s_9c25743c2d0607::t_0e1691c7ef5290 221,330,342
+Sources/NetworkingTestSupport/RetryTimingTestSupport.swift
+  s_9c25743c2d0607::t_cd75a7aa612c65 1-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "506693b146267718f45939471e13c574607f74b9",
+  "prompts": {},
+  "sessions": {
+    "s_2dd6bd4bf82082": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d8c7-fd52-74f1-b58f-0e04713c6fa2",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    },
+    "s_9c25743c2d0607": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d8c8-8436-7e61-a094-15b63e6b6512",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
