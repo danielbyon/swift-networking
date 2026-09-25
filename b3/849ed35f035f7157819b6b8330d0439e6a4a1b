@@ -1,0 +1,21 @@
+Scripts/swift-tools.lock
+  s_6f4e34970681e5::t_3e5070080b7e72 2-4
+Scripts/swift-tools.sh
+  s_6f4e34970681e5::t_5a4bdc09007bb1 242-349,367-378,381,385-386
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b3849ed35f035f7157819b6b8330d0439e6a4a1b",
+  "prompts": {},
+  "sessions": {
+    "s_6f4e34970681e5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d575-4d61-7ba3-9dad-b597f1d9c0da",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
