@@ -1,0 +1,19 @@
+Sources/Networking/RedirectPolicy.swift
+  s_f330a2f74ac9c4::t_d2793cc8d3a3eb 67-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "32444beb32d73be9aaa96681a9397b0d1e572a9c",
+  "prompts": {},
+  "sessions": {
+    "s_f330a2f74ac9c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0da3d-5ee7-7171-a4e1-ce5e26c8574a",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
