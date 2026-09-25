@@ -1,0 +1,21 @@
+Tests/NetworkingTests/RequestContextTests.swift
+  s_84e9a6b7f181ed::t_649dd20d4c34c1 41,55,90
+Tests/NetworkingTests/BodyEncodingAndResponseDecodingTests.swift
+  s_84e9a6b7f181ed::t_649dd20d4c34c1 37,282
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0cdfd6cb41ac63c9b11419350b220e845c52f50d",
+  "prompts": {},
+  "sessions": {
+    "s_84e9a6b7f181ed": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d47b-617e-7501-b7b7-8960578f88aa",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
