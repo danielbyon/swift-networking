@@ -18,6 +18,9 @@ public struct Response<Value: Sendable>: Sendable {
     /// The identity of the logical execution that produced this response.
     public let requestID: RequestID
 
+    /// The transport attempts that produced the response, in execution order.
+    public let attempts: [AttemptMetrics]
+
     /// A configured prefix of the raw response body, when successful-body retention is enabled.
     public let retainedBody: RetainedBody?
 
@@ -25,11 +28,13 @@ public struct Response<Value: Sendable>: Sendable {
         value: Value,
         httpResponse: HTTPResponse,
         requestID: RequestID,
+        attempts: [AttemptMetrics] = [],
         retainedBody: RetainedBody? = nil,
     ) {
         self.value = value
         self.httpResponse = httpResponse
         self.requestID = requestID
+        self.attempts = attempts
         self.retainedBody = retainedBody
     }
 }
