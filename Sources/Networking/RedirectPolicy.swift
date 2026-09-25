@@ -64,7 +64,11 @@ public struct RedirectPolicy: Sendable {
         }
     }
 
-    /// The maximum number of redirects one transport attempt may follow.
+    /// The maximum number of redirects this policy allows one transport attempt to follow.
+    ///
+    /// URLSession may impose a separate platform ceiling (currently 16 on Apple platforms). If it
+    /// stops a chain before this policy's limit is exhausted, its URL-loading error remains a
+    /// transport failure. `RedirectError` represents exhaustion of this policy's own follow budget.
     public let maximumRedirects: UInt
 
     private let decide: @Sendable (Context) -> Decision
