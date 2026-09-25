@@ -15,6 +15,7 @@ public struct Request<Output: Sendable>: Sendable {
     package let query: CapturedQuery
     package let requestQueryItems: [URLQueryItem]
     package let response: ResponseDecoding<Output>
+    package let authenticationRequirement: AuthenticationRequirement
     package let endpointHeaders: HTTPFields
     package let requestHeaders: HTTPFields
     package let context: RequestContext
@@ -32,6 +33,7 @@ public struct Request<Output: Sendable>: Sendable {
         query: CapturedQuery,
         requestQueryItems: [URLQueryItem],
         response: ResponseDecoding<Output>,
+        authenticationRequirement: AuthenticationRequirement,
         endpointHeaders: HTTPFields,
         requestHeaders: HTTPFields = HTTPFields(),
         context: RequestContext = RequestContext(),
@@ -48,6 +50,7 @@ public struct Request<Output: Sendable>: Sendable {
         self.query = query
         self.requestQueryItems = requestQueryItems
         self.response = response
+        self.authenticationRequirement = authenticationRequirement
         self.endpointHeaders = endpointHeaders
         self.requestHeaders = requestHeaders
         self.context = context
@@ -72,6 +75,7 @@ public struct Request<Output: Sendable>: Sendable {
             query: endpoint.query.capture(input: input),
             requestQueryItems: [],
             response: endpoint.response,
+            authenticationRequirement: endpoint.authenticationRequirement,
             endpointHeaders: endpoint.resolveHeaders(input: input),
             jsonEncoderConfiguration: endpoint.jsonEncoderConfiguration,
             jsonDecoderConfiguration: endpoint.jsonDecoderConfiguration,
@@ -92,6 +96,7 @@ public struct Request<Output: Sendable>: Sendable {
             query: endpoint.query.constant,
             requestQueryItems: [],
             response: endpoint.response,
+            authenticationRequirement: endpoint.authenticationRequirement,
             endpointHeaders: endpoint.constantHeaders,
             jsonEncoderConfiguration: endpoint.jsonEncoderConfiguration,
             jsonDecoderConfiguration: endpoint.jsonDecoderConfiguration,
@@ -122,6 +127,7 @@ public struct Request<Output: Sendable>: Sendable {
             query: endpoint.query.capture(input: input),
             requestQueryItems: [],
             response: endpoint.response,
+            authenticationRequirement: endpoint.authenticationRequirement,
             endpointHeaders: endpoint.resolveHeaders(input: input),
             body: RequestBody(body: body, encoding: endpoint.bodyEncoding),
             jsonEncoderConfiguration: endpoint.jsonEncoderConfiguration,
@@ -148,6 +154,7 @@ public struct Request<Output: Sendable>: Sendable {
             query: endpoint.query.constant,
             requestQueryItems: [],
             response: endpoint.response,
+            authenticationRequirement: endpoint.authenticationRequirement,
             endpointHeaders: endpoint.constantHeaders,
             body: RequestBody(body: body, encoding: endpoint.bodyEncoding),
             jsonEncoderConfiguration: endpoint.jsonEncoderConfiguration,
@@ -177,6 +184,7 @@ public struct Request<Output: Sendable>: Sendable {
             query: query,
             requestQueryItems: requestQueryItems,
             response: response,
+            authenticationRequirement: authenticationRequirement,
             endpointHeaders: endpointHeaders,
             requestHeaders: requestHeaders,
             context: context.setting(key, value: value),
@@ -204,6 +212,7 @@ public struct Request<Output: Sendable>: Sendable {
             query: query,
             requestQueryItems: queryItems,
             response: response,
+            authenticationRequirement: authenticationRequirement,
             endpointHeaders: endpointHeaders,
             requestHeaders: requestHeaders,
             context: context,
@@ -231,6 +240,7 @@ public struct Request<Output: Sendable>: Sendable {
             query: query,
             requestQueryItems: requestQueryItems,
             response: response,
+            authenticationRequirement: authenticationRequirement,
             endpointHeaders: endpointHeaders,
             requestHeaders: fields,
             context: context,
@@ -262,6 +272,7 @@ public struct Request<Output: Sendable>: Sendable {
             query: query,
             requestQueryItems: requestQueryItems,
             response: response,
+            authenticationRequirement: authenticationRequirement,
             endpointHeaders: endpointHeaders,
             requestHeaders: fields,
             context: context,
@@ -283,6 +294,7 @@ public struct Request<Output: Sendable>: Sendable {
             query: query,
             requestQueryItems: requestQueryItems,
             response: response,
+            authenticationRequirement: authenticationRequirement,
             endpointHeaders: endpointHeaders,
             requestHeaders: requestHeaders,
             context: context,
@@ -304,6 +316,7 @@ public struct Request<Output: Sendable>: Sendable {
             query: query,
             requestQueryItems: requestQueryItems,
             response: response,
+            authenticationRequirement: authenticationRequirement,
             endpointHeaders: endpointHeaders,
             requestHeaders: requestHeaders,
             context: context,
@@ -325,6 +338,7 @@ public struct Request<Output: Sendable>: Sendable {
             query: query,
             requestQueryItems: requestQueryItems,
             response: response,
+            authenticationRequirement: authenticationRequirement,
             endpointHeaders: endpointHeaders,
             requestHeaders: requestHeaders,
             context: context,
@@ -348,6 +362,7 @@ public struct Request<Output: Sendable>: Sendable {
             query: query,
             requestQueryItems: requestQueryItems,
             response: response,
+            authenticationRequirement: authenticationRequirement,
             endpointHeaders: endpointHeaders,
             requestHeaders: requestHeaders,
             context: context,

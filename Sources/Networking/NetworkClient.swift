@@ -54,6 +54,107 @@ private func transportFailureRetryDiagnosticReason(
         + "built-in reason: \(String(describing: classificationReason))"
 }
 
+private struct ResolvedAuthenticationConfiguration: Sendable {
+    let provider: any AuthenticationProvider
+    let maximumReplays: UInt
+}
+
+private func resolveAuthenticationConfiguration(
+    requirement: AuthenticationRequirement,
+    provider: (any AuthenticationProvider)?,
+    requestID: RequestID,
+) throws -> ResolvedAuthenticationConfiguration? {
+    switch requirement {
+    case .none:
+        return nil
+    case let .required(maximumReplays):
+        guard let provider else {
+            throw AuthenticationConfigurationError(requestID: requestID)
+        }
+
+        return ResolvedAuthenticationConfiguration(provider: provider, maximumReplays: maximumReplays)
+    }
+}
+
+private func adaptRequestForAttempt(
+    _ request: HTTPRequest,
+    body: PreparedRequestBody,
+    requestID: RequestID,
+    context: RequestContext,
+    adapters: [AnyRequestAdapter],
+    authentication: ResolvedAuthenticationConfiguration?,
+) async throws -> HTTPRequest {
+    var adaptedRequest = request
+    for adapter in adapters {
+        adaptedRequest = try await adapter.adapt(
+            RequestAdaptationContext(
+                request: adaptedRequest,
+                body: body,
+                requestID: requestID,
+                context: context,
+            ),
+        )
+    }
+
+    if let authentication {
+        try Task.checkCancellation()
+        adaptedRequest = try await authentication.provider.adapt(
+            RequestAdaptationContext(
+                request: adaptedRequest,
+                body: body,
+                requestID: requestID,
+                context: context,
+            ),
+        )
+        try Task.checkCancellation()
+    }
+
+    return adaptedRequest
+}
+
+private func authenticationReplayAttempt(
+    authentication: ResolvedAuthenticationConfiguration?,
+    replayCount: UInt,
+    request: HTTPRequest,
+    response: HTTPResponse,
+    receivedBody: ReceivedResponseBody,
+    requestContext: RequestContext,
+    requestID: RequestID,
+    attemptNumber: UInt,
+    normalizedMetrics: NormalizedAttemptMetrics,
+    rawTaskMetrics: URLSessionTaskMetrics?,
+) async throws -> AttemptMetrics? {
+    guard let authentication, replayCount < authentication.maximumReplays else {
+        return nil
+    }
+
+    try Task.checkCancellation()
+    let recovery = try await authentication.provider.recover(
+        AuthenticationRecoveryContext(
+            request: request,
+            httpResponse: response,
+            receivedBody: receivedBody,
+            requestContext: requestContext,
+            requestID: requestID,
+            attemptNumber: attemptNumber,
+        ),
+    )
+    try Task.checkCancellation()
+
+    guard case .replay = recovery else {
+        return nil
+    }
+
+    return AttemptMetrics(
+        requestID: requestID,
+        attemptNumber: attemptNumber,
+        normalizedMetrics: normalizedMetrics,
+        outcome: .authenticationReplayScheduled,
+        diagnosticReason: "authentication provider requested immediate replay",
+        rawTaskMetrics: rawTaskMetrics,
+    )
+}
+
 package protocol NetworkTransport: Sendable {
     func execute(_ request: TransportRequest) async throws -> (Data, HTTPResponse)
     func executeWithMetrics(_ request: TransportRequest) async -> NetworkTransportResult
@@ -417,6 +518,9 @@ public final class NetworkClient: Sendable {
         /// The default bounded retry policy, with retries disabled unless explicitly configured.
         public let retryPolicy: RetryPolicy
 
+        /// The provider used by endpoints that require authentication.
+        public let authenticationProvider: (any AuthenticationProvider)?
+
         /// The default policy for retaining bodies of accepted responses.
         public let successfulResponseBodyRetentionPolicy: BodyRetentionPolicy
 
@@ -451,6 +555,7 @@ public final class NetworkClient: Sendable {
             cachePolicy = nil
             responseValidationPolicy = .successfulStatusCodes
             retryPolicy = RetryPolicy()
+            authenticationProvider = nil
             successfulResponseBodyRetentionPolicy = .none
             validationErrorBodyRetentionPolicy = .unlimited
             assumesHTTP3Capable = nil
@@ -481,6 +586,7 @@ public final class NetworkClient: Sendable {
             assumesHTTP3Capable: Bool?,
             requestIDGenerator: any RequestIDGenerator,
             requestAdapters: [AnyRequestAdapter],
+            authenticationProvider: (any AuthenticationProvider)?,
         ) {
             self.baseURL = baseURL
             self.defaultHeaders = defaultHeaders
@@ -504,6 +610,7 @@ public final class NetworkClient: Sendable {
             self.assumesHTTP3Capable = assumesHTTP3Capable
             self.requestIDGenerator = requestIDGenerator
             self.requestAdapters = requestAdapters
+            self.authenticationProvider = authenticationProvider
         }
 
         /// Returns a copy with replacement static query items for relative routes.
@@ -566,6 +673,14 @@ public final class NetworkClient: Sendable {
         /// - Returns: A configuration with the adapter added after existing adapters.
         public func withRequestAdapter(_ adapter: some RequestAdapter) -> Self {
             copying(requestAdapters: .set(requestAdapters + [AnyRequestAdapter(adapter)]))
+        }
+
+        /// Returns a copy using the supplied authentication provider, or no provider when nil.
+        ///
+        /// - Parameter provider: The provider for endpoints that require authentication.
+        /// - Returns: A configuration with the replacement optional provider.
+        public func withAuthenticationProvider(_ provider: (any AuthenticationProvider)?) -> Self {
+            copying(authenticationProvider: .set(provider))
         }
 
         /// Returns a copy with replacement client-wide default HTTP fields.
@@ -706,6 +821,9 @@ public final class NetworkClient: Sendable {
             assumesHTTP3Capable assumesHTTP3CapableUpdate: ConfigurationFieldUpdate<Bool?> = .unchanged,
             requestIDGenerator requestIDGeneratorUpdate: ConfigurationFieldUpdate<any RequestIDGenerator> = .unchanged,
             requestAdapters requestAdaptersUpdate: ConfigurationFieldUpdate<[AnyRequestAdapter]> = .unchanged,
+            authenticationProvider authenticationProviderUpdate: ConfigurationFieldUpdate<
+                (any AuthenticationProvider)?,
+            > = .unchanged,
         ) -> Self {
             Self(
                 baseURL: baseURLUpdate.applying(to: baseURL),
@@ -744,6 +862,7 @@ public final class NetworkClient: Sendable {
                 assumesHTTP3Capable: assumesHTTP3CapableUpdate.applying(to: assumesHTTP3Capable),
                 requestIDGenerator: requestIDGeneratorUpdate.applying(to: requestIDGenerator),
                 requestAdapters: requestAdaptersUpdate.applying(to: requestAdapters),
+                authenticationProvider: authenticationProviderUpdate.applying(to: authenticationProvider),
             )
         }
     }
@@ -829,6 +948,7 @@ public final class NetworkClient: Sendable {
         let clientSuccessfulResponseBodyRetentionPolicy = configuration.successfulResponseBodyRetentionPolicy
         let clientValidationErrorBodyRetentionPolicy = configuration.validationErrorBodyRetentionPolicy
         let requestAdapters = configuration.requestAdapters
+        let authenticationProvider = configuration.authenticationProvider
         let routeKind: QueryRouteKind =
             switch request.route {
             case .absolute:
@@ -848,9 +968,15 @@ public final class NetworkClient: Sendable {
                 requestQueryItems: request.requestQueryItems,
                 requestID: requestID,
             )
+            let authentication = try resolveAuthenticationConfiguration(
+                requirement: request.authenticationRequirement,
+                provider: authenticationProvider,
+                requestID: requestID,
+            )
             var attempts: [AttemptMetrics] = []
             var attemptNumber: UInt = 0
             var retryCount: UInt = 0
+            var authenticationReplayCount: UInt = 0
 
             while true {
                 try Task.checkCancellation()
@@ -875,17 +1001,14 @@ public final class NetworkClient: Sendable {
                 }
 
                 let bodyInspection = preparedBody.inspection
-                var adaptedRequest = httpRequest
-                for adapter in requestAdapters {
-                    adaptedRequest = try await adapter.adapt(
-                        RequestAdaptationContext(
-                            request: adaptedRequest,
-                            body: bodyInspection,
-                            requestID: requestID,
-                            context: request.context,
-                        ),
-                    )
-                }
+                let adaptedRequest = try await adaptRequestForAttempt(
+                    httpRequest,
+                    body: bodyInspection,
+                    requestID: requestID,
+                    context: request.context,
+                    adapters: requestAdapters,
+                    authentication: authentication,
+                )
 
                 try Task.checkCancellation()
                 let nextAttemptNumber = attemptNumber + 1
@@ -900,6 +1023,24 @@ public final class NetworkClient: Sendable {
                     attemptNumber = nextAttemptNumber
                     let normalizedMetrics = NormalizedAttemptMetrics(taskMetrics: rawTaskMetrics)
                     try Task.checkCancellation()
+
+                    if let replayAttempt = try await authenticationReplayAttempt(
+                        authentication: authentication,
+                        replayCount: authenticationReplayCount,
+                        request: adaptedRequest,
+                        response: httpResponse,
+                        receivedBody: .data(data),
+                        requestContext: request.context,
+                        requestID: requestID,
+                        attemptNumber: attemptNumber,
+                        normalizedMetrics: normalizedMetrics,
+                        rawTaskMetrics: rawTaskMetrics,
+                    ) {
+                        attempts.append(replayAttempt)
+                        authenticationReplayCount += 1
+                        try Task.checkCancellation()
+                        continue
+                    }
 
                     let classification = retryPolicy.builtInClassification(
                         method: adaptedRequest.method,

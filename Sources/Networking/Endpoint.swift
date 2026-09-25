@@ -8,7 +8,7 @@
 import Foundation
 import HTTPTypes
 
-/// A reusable HTTP contract that defines an operation's method, route, query, headers, and response decoding.
+/// A reusable HTTP contract that defines an operation's method, route, query, headers, authentication, and response decoding.
 public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Sendable {
     private enum HeaderStorage: Sendable {
         case fixed(HTTPFields)
@@ -20,6 +20,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
     package let query: QueryEncoding<Input>
     package let bodyEncoding: BodyEncoding<Body>
     package let response: ResponseDecoding<Output>
+    package let authenticationRequirement: AuthenticationRequirement
     package let jsonEncoderConfiguration: JSONEncoderConfiguration
     package let jsonDecoderConfiguration: JSONDecoderConfiguration
     package let responseValidationPolicy: ResponseValidationPolicy?
@@ -34,6 +35,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
         query: QueryEncoding<Input>,
         bodyEncoding: BodyEncoding<Body>,
         response: ResponseDecoding<Output>,
+        authenticationRequirement: AuthenticationRequirement = .none,
         jsonEncoderConfiguration: @escaping JSONEncoderConfiguration = { _ in },
         jsonDecoderConfiguration: @escaping JSONDecoderConfiguration = { _ in },
         responseValidationPolicy: ResponseValidationPolicy? = nil,
@@ -47,6 +49,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
         self.query = query
         self.bodyEncoding = bodyEncoding
         self.response = response
+        self.authenticationRequirement = authenticationRequirement
         self.jsonEncoderConfiguration = jsonEncoderConfiguration
         self.jsonDecoderConfiguration = jsonDecoderConfiguration
         self.responseValidationPolicy = responseValidationPolicy
@@ -63,6 +66,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             query: query,
             bodyEncoding: bodyEncoding,
             response: response,
+            authenticationRequirement: authenticationRequirement,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
@@ -150,6 +154,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             query: query,
             bodyEncoding: bodyEncoding,
             response: response,
+            authenticationRequirement: authenticationRequirement,
             jsonEncoderConfiguration: { encoder in
                 jsonEncoderConfiguration(encoder)
                 configure(encoder)
@@ -178,6 +183,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             query: query,
             bodyEncoding: bodyEncoding,
             response: response,
+            authenticationRequirement: authenticationRequirement,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: { decoder in
                 jsonDecoderConfiguration(decoder)
@@ -201,6 +207,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             query: query,
             bodyEncoding: bodyEncoding,
             response: response,
+            authenticationRequirement: authenticationRequirement,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: policy,
@@ -219,6 +226,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             query: query,
             bodyEncoding: bodyEncoding,
             response: response,
+            authenticationRequirement: authenticationRequirement,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
@@ -237,12 +245,34 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             query: query,
             bodyEncoding: bodyEncoding,
             response: response,
+            authenticationRequirement: authenticationRequirement,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,
             retryPolicy: retryPolicy,
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: policy,
+            headerStorage: headerStorage,
+        )
+    }
+
+    /// Returns a copy with the endpoint's authentication and replay requirement.
+    ///
+    /// Requests created from this endpoint capture the requirement and cannot override it.
+    public func authenticationRequirement(_ requirement: AuthenticationRequirement) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            bodyEncoding: bodyEncoding,
+            response: response,
+            authenticationRequirement: requirement,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: responseValidationPolicy,
+            retryPolicy: retryPolicy,
+            successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             headerStorage: headerStorage,
         )
     }
@@ -257,6 +287,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             query: query,
             bodyEncoding: bodyEncoding,
             response: response,
+            authenticationRequirement: authenticationRequirement,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
             jsonDecoderConfiguration: jsonDecoderConfiguration,
             responseValidationPolicy: responseValidationPolicy,

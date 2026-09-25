@@ -16,6 +16,9 @@ public enum AttemptOutcome: Sendable, Equatable, Hashable {
     /// The HTTP response was consumed to schedule an ordinary retry before validation.
     case retryScheduled
 
+    /// The HTTP response was consumed to schedule an immediate authentication replay.
+    case authenticationReplayScheduled
+
     /// The response passed validation.
     case acceptedResponse
 
