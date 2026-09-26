@@ -94,7 +94,7 @@ struct RequestAdapterTests {
         #expect(await transport.recordedRequests().isEmpty)
     }
 
-    @Test("File-backed requests fail before invoking adapters")
+    @Test("Missing file-backed requests fail before invoking adapters or transport")
     func fileBodyFailsBeforeAdapters() async throws {
         let adapterCalls = AdapterCallCounter()
         let transport = AdapterRecordingTransport()
@@ -114,11 +114,16 @@ struct RequestAdapterTests {
             response: .data,
         )
 
+        let missingURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "swift-networking-missing-\(UUID().uuidString).bin",
+        )
+        let task = client.task(for: Request(endpoint: endpoint, body: missingURL))
         do {
-            _ = try await client.send(Request(endpoint: endpoint, body: URL(fileURLWithPath: "/tmp/upload")))
+            _ = try await task.value
             Issue.record("Expected file-backed body construction to fail")
         } catch let error as RequestConstructionError {
-            #expect(error.reason == .unsupportedOperationBodyCombination)
+            #expect(error.reason == .unreadableFileBody)
+            #expect(error.requestID == task.requestID)
             #expect(await adapterCalls.value == 0)
         }
 

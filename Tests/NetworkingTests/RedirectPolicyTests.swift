@@ -203,10 +203,11 @@ struct RedirectPolicyTests {
         #expect(Request(endpoint: endpoint).redirectPolicy(requestPolicy).redirectPolicy?.maximumRedirects == 3)
     }
 
-    @Test("The URLSession delegate forwards Foundation's proposed request and supplies redirect context")
-    func delegateForwardsProposedRequestAndSuppliesRedirectContext() throws {
+    @Test("The upload-task delegate forwards Foundation's proposed request and supplies redirect context")
+    func uploadTaskDelegateForwardsProposedRequestAndSuppliesRedirectContext() throws {
         let initialURL = try #require(URL(string: "https://example.com/start"))
-        let initialRequest = URLRequest(url: initialURL)
+        var initialRequest = URLRequest(url: initialURL)
+        initialRequest.httpMethod = "POST"
         let requestID = RequestID(rawValue: UUID())
         let requestContext = RequestContext().setting(RedirectTraceKey.self, value: "trace-delegate")
         let receivedContexts = Mutex<[RedirectPolicy.Context]>([])
@@ -214,17 +215,20 @@ struct RedirectPolicyTests {
             receivedContexts.withLock { $0.append(context) }
             return .follow
         }
-        let transportRequest = makeTransportRequest(
-            initialURL: initialURL,
-            policy: policy,
+        let uploadBody = Data("upload-body".utf8)
+        let transportRequest = TransportRequest(
+            httpRequest: HTTPRequest(method: .post, url: initialURL),
+            body: .data(uploadBody),
+            redirectPolicy: policy,
             requestID: requestID,
             requestContext: requestContext,
             attemptNumber: 4,
+            operation: .upload,
         )
         let delegate = URLSessionTaskMetricsDelegate(transportRequest: transportRequest, initialRequest: initialRequest)
         let session = URLSession(configuration: .ephemeral)
         defer { session.invalidateAndCancel() }
-        let task = session.dataTask(with: initialRequest)
+        let task = session.uploadTask(with: initialRequest, from: uploadBody)
         var firstProposal = try URLRequest(url: #require(URL(string: "https://example.com/next")))
         firstProposal.httpMethod = "PATCH"
         firstProposal.setValue("preserved", forHTTPHeaderField: "X-Proposed")
@@ -263,6 +267,7 @@ struct RedirectPolicyTests {
         #expect(contexts[0].attemptNumber == 4)
         #expect(contexts[0].redirectOrdinal == 1)
         #expect(contexts[1].redirectOrdinal == 2)
+        #expect(transportRequest.execution == .uploadFromData(uploadBody))
     }
 
     @Test("Redirect limits apply only to follow decisions and count per transport attempt")
