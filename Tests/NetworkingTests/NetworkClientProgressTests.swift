@@ -201,6 +201,44 @@ struct NetworkClientProgressTests {
         #expect(await lateIterator.next() == nil)
     }
 
+    @Test("Execute-only transports publish their attempt while execution is in flight")
+    func executeOnlyTransportPublishesAttemptBeforeExecutionCompletes() async throws {
+        let gate = ProgressExecutionGate()
+        let client = try NetworkClient(transport: ExecuteOnlyBlockingTransport(gate: gate))
+        let task = try client.task(for: makeBodyfulRequest())
+
+        await gate.waitUntilEntered()
+        var iterator = task.progress.makeAsyncIterator()
+        let progressBeforeRelease = await iterator.next()
+        await gate.release()
+        let response = try await task.value
+
+        #expect(progressBeforeRelease?.attemptNumber == 1)
+        #expect(progressBeforeRelease?.expectedBytesToSend == 3)
+        #expect(response.value == Data([0x2a]))
+    }
+
+    @Test("A progress-aware pretransport failure does not publish an attempt")
+    func pretransportFailureDoesNotPublishAnAttempt() async throws {
+        let gate = ProgressExecutionGate()
+        let client = try NetworkClient(transport: PretransportFailureTransport(gate: gate))
+        let task = try client.task(for: makeBodyfulRequest())
+        var iterator = task.progress.makeAsyncIterator()
+
+        await gate.waitUntilEntered()
+        let progressBeforeFailure = await iterator.next()
+        await gate.release()
+        do {
+            _ = try await task.value
+            Issue.record("Expected the pretransport failure")
+        } catch NetworkProgressClientTestError.expectedFailure {
+            // A failure before transport start does not create an attempt.
+        }
+
+        #expect(progressBeforeFailure?.attemptNumber == nil)
+        #expect(await iterator.next() == nil)
+    }
+
     private func makeBodyfulRequest() throws -> Request<Data> {
         let url = try #require(URL(string: "https://progress.test/retry"))
         let endpoint = Endpoint<Never, Data, Data>.data(
@@ -234,33 +272,107 @@ private actor ProgressReportingTransport: NetworkTransport {
         throw NetworkProgressClientTestError.unexpectedLegacyTransportCall
     }
 
-    func executeWithMetrics(_: TransportRequest) async -> NetworkTransportResult {
-        .failure(
-            error: NetworkProgressClientTestError.unexpectedLegacyTransportCall,
-            rawTaskMetrics: nil,
-            didStartTask: false,
-        )
-    }
-
     func executeWithMetrics(
         _ request: TransportRequest,
         progress: NetworkProgressReporter,
     ) async -> NetworkTransportResult {
         let step = steps.removeFirst()
-        progress.startAttempt(
-            attemptNumber: request.attemptNumber,
-            expectedBytesToSend: step.expectedBytesToSend,
-        )
-        progress.updateUpload(
-            bytesSent: step.bytesSent,
-            expectedBytesToSend: step.expectedBytesToSend,
-        )
-        progress.updateDownload(
-            bytesReceived: step.bytesReceived,
-            expectedBytesToReceive: step.expectedBytesToReceive,
-        )
+        switch step.result {
+        case .success,
+             .redirectLimitExceeded,
+             .failure(_, _, true):
+            progress.startAttempt(
+                attemptNumber: request.attemptNumber,
+                expectedBytesToSend: step.expectedBytesToSend,
+            )
+            progress.updateUpload(
+                bytesSent: step.bytesSent,
+                expectedBytesToSend: step.expectedBytesToSend,
+            )
+            progress.updateDownload(
+                bytesReceived: step.bytesReceived,
+                expectedBytesToReceive: step.expectedBytesToReceive,
+            )
+        case .failure(_, _, false):
+            break
+        }
         await gate.reportAndWait(request.attemptNumber)
         return step.result
+    }
+}
+
+private actor ExecuteOnlyBlockingTransport: NetworkTransport {
+    private let gate: ProgressExecutionGate
+
+    init(gate: ProgressExecutionGate) {
+        self.gate = gate
+    }
+
+    func execute(_: TransportRequest) async throws -> (Data, HTTPResponse) {
+        await gate.enterAndWait()
+        return (Data([0x2a]), HTTPResponse(status: .init(code: 200)))
+    }
+}
+
+private actor PretransportFailureTransport: NetworkTransport {
+    private let gate: ProgressExecutionGate
+
+    init(gate: ProgressExecutionGate) {
+        self.gate = gate
+    }
+
+    func execute(_: TransportRequest) async throws -> (Data, HTTPResponse) {
+        throw NetworkProgressClientTestError.unexpectedLegacyTransportCall
+    }
+
+    func executeWithMetrics(
+        _: TransportRequest,
+        progress _: NetworkProgressReporter,
+    ) async -> NetworkTransportResult {
+        await gate.enterAndWait()
+        return .failure(
+            error: NetworkProgressClientTestError.expectedFailure,
+            rawTaskMetrics: nil,
+            didStartTask: false,
+        )
+    }
+}
+
+private actor ProgressExecutionGate {
+    private var entered = false
+    private var released = false
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func enterAndWait() async {
+        entered = true
+        resume(entryWaiters)
+        entryWaiters.removeAll()
+        guard !released else {
+            return
+        }
+
+        await withCheckedContinuation { releaseWaiters.append($0) }
+    }
+
+    func waitUntilEntered() async {
+        guard !entered else {
+            return
+        }
+
+        await withCheckedContinuation { entryWaiters.append($0) }
+    }
+
+    func release() {
+        released = true
+        resume(releaseWaiters)
+        releaseWaiters.removeAll()
+    }
+
+    private func resume(_ waiters: [CheckedContinuation<Void, Never>]) {
+        for waiter in waiters {
+            waiter.resume()
+        }
     }
 }
 

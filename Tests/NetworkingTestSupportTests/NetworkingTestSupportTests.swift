@@ -268,7 +268,10 @@ private actor ScriptedRetryTimingTransport: NetworkTransport {
         throw URLError(.badServerResponse)
     }
 
-    func executeWithMetrics(_ request: TransportRequest) async -> NetworkTransportResult {
+    func executeWithMetrics(
+        _ request: TransportRequest,
+        progress: NetworkProgressReporter,
+    ) async -> NetworkTransportResult {
         requests.append(request)
         guard !steps.isEmpty else {
             return .failure(
@@ -278,12 +281,15 @@ private actor ScriptedRetryTimingTransport: NetworkTransport {
             )
         }
 
-        return switch steps.removeFirst() {
-        case let .response(data, response):
-            .success(data: data, response: response, rawTaskMetrics: nil)
-        case let .failure(error):
-            .failure(error: error, rawTaskMetrics: nil, didStartTask: true)
-        }
+        let result: NetworkTransportResult =
+            switch steps.removeFirst() {
+            case let .response(data, response):
+                .success(data: data, response: response, rawTaskMetrics: nil)
+            case let .failure(error):
+                .failure(error: error, rawTaskMetrics: nil, didStartTask: true)
+            }
+        progress.startAttempt(attemptNumber: request.attemptNumber, expectedBytesToSend: nil)
+        return result
     }
 
     func executionCount() -> Int {

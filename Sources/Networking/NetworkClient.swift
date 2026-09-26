@@ -157,8 +157,7 @@ private func authenticationReplayAttempt(
 
 package protocol NetworkTransport: Sendable {
     func execute(_ request: TransportRequest) async throws -> (Data, HTTPResponse)
-    func executeWithMetrics(_ request: TransportRequest) async -> NetworkTransportResult
-    /// Executes one attempt and publishes byte-transfer updates for that logical task.
+    /// Executes one attempt, publishes its start, and reports byte-transfer updates.
     func executeWithMetrics(
         _ request: TransportRequest,
         progress: NetworkProgressReporter,
@@ -166,11 +165,19 @@ package protocol NetworkTransport: Sendable {
 }
 
 extension NetworkTransport {
-    /// Adapts transports that expose only the original tuple-returning operation.
+    /// Adapts a transport that exposes only the tuple-returning operation.
     ///
-    /// The caught error is stored directly so the client can rethrow the same value without
-    /// replacing it with a metrics wrapper.
-    package func executeWithMetrics(_ request: TransportRequest) async -> NetworkTransportResult {
+    /// The execute-only contract treats entry into `execute` as the start of an attempt. A
+    /// conformer that can fail before starting transport work must implement this progress-aware
+    /// method and report an attempt only after its own start decision succeeds.
+    package func executeWithMetrics(
+        _ request: TransportRequest,
+        progress: NetworkProgressReporter,
+    ) async -> NetworkTransportResult {
+        progress.startAttempt(
+            attemptNumber: request.attemptNumber,
+            expectedBytesToSend: expectedRequestBodyByteCount(request.execution),
+        )
         do {
             let (data, response) = try await execute(request)
             return .success(data: data, response: response, rawTaskMetrics: nil)
@@ -179,27 +186,9 @@ extension NetworkTransport {
         }
     }
 
-    /// Preserves existing test transports while reporting which scripted attempts actually started.
-    package func executeWithMetrics(
-        _ request: TransportRequest,
-        progress: NetworkProgressReporter,
-    ) async -> NetworkTransportResult {
-        let result = await executeWithMetrics(request)
-        let didStartTask: Bool =
-            switch result {
-            case .success,
-                 .redirectLimitExceeded:
-                true
-            case let .failure(_, _, didStart):
-                didStart
-            }
-        if didStartTask {
-            progress.startAttempt(
-                attemptNumber: request.attemptNumber,
-                expectedBytesToSend: expectedRequestBodyByteCount(request.execution),
-            )
-        }
-        return result
+    /// Executes through the progress-aware transport seam without retaining progress updates.
+    package func executeWithMetrics(_ request: TransportRequest) async -> NetworkTransportResult {
+        await executeWithMetrics(request, progress: NetworkProgressCoordinator().reporter)
     }
 }
 
@@ -318,15 +307,18 @@ package struct URLSessionTransport: NetworkTransport {
     private let session: URLSession
     private let delegateRouter: URLSessionDelegateRouter
     private let assumesHTTP3Capable: Bool?
+    private let beforeTaskStart: (@Sendable () async -> Void)?
 
     /// Creates the one foreground session shared by every attempt executed by this transport.
     ///
     /// - Parameters:
     ///   - configuration: The client policies used to configure a production foreground session.
     ///   - sessionConfiguration: An optional package-only session configuration for deterministic tests.
+    ///   - beforeTaskStart: An optional package-only hook for holding task start in deterministic tests.
     package init(
         configuration: NetworkClient.Configuration,
         sessionConfiguration: URLSessionConfiguration? = nil,
+        beforeTaskStart: (@Sendable () async -> Void)? = nil,
     ) {
         let router = URLSessionDelegateRouter()
         delegateRouter = router
@@ -337,6 +329,7 @@ package struct URLSessionTransport: NetworkTransport {
             delegateQueue: nil,
         )
         assumesHTTP3Capable = configuration.assumesHTTP3Capable
+        self.beforeTaskStart = beforeTaskStart
     }
 
     package func execute(_ request: TransportRequest) async throws -> (Data, HTTPResponse) {
@@ -395,29 +388,31 @@ package struct URLSessionTransport: NetworkTransport {
                 session.uploadTask(with: urlRequest, fromFile: fileURL)
             }
 
-        let didStartTask = Mutex(false)
-        let taskResult = await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                guard Task.isCancelled == false else {
-                    let cancellation: Result<URLSessionTaskPayload, any Error> = .failure(CancellationError())
-                    continuation.resume(returning: cancellation)
-                    return
-                }
-
-                delegateRouter.register(delegate, for: task.taskIdentifier)
-                delegate.waitForTaskCompletion(continuation)
-                didStartTask.withLock { $0 = true }
-                progress.startAttempt(
+        delegateRouter.register(delegate, for: task.taskIdentifier)
+        let startControl = URLSessionTaskStartControl()
+        let taskCompletion = await withTaskCancellationHandler {
+            await beforeTaskStart?()
+            return await withCheckedContinuation { continuation in
+                guard startControl.start(
+                    task,
+                    delegate: delegate,
                     attemptNumber: request.attemptNumber,
                     expectedBytesToSend: expectedRequestBodyByteCount(execution),
-                )
-                task.resume()
+                    progress: progress,
+                    continuation: continuation,
+                ) else {
+                    continuation.resume(returning: .notStarted)
+                    return
+                }
             }
         } onCancel: {
-            task.cancel()
+            startControl.cancel(task)
         }
 
-        guard didStartTask.withLock({ $0 }) else {
+        guard startControl.didStartTask,
+              case let .completed(taskResult) = taskCompletion
+        else {
+            delegateRouter.unregister(delegate, for: task.taskIdentifier)
             return .failure(error: CancellationError(), rawTaskMetrics: nil, didStartTask: false)
         }
 
@@ -445,6 +440,100 @@ package struct URLSessionTransport: NetworkTransport {
         }
 
         return .success(data: data, response: response, rawTaskMetrics: rawTaskMetrics)
+    }
+}
+
+/// Serializes attempt start with cancellation for one suspended URLSession task.
+private final class URLSessionTaskStartControl: Sendable {
+    private enum State: Sendable, Equatable {
+        case pending
+        case cancelled
+        case starting(cancelAfterResume: Bool)
+        case started
+    }
+
+    private let state = Mutex(State.pending)
+
+    var didStartTask: Bool {
+        state.withLock { currentState in
+            switch currentState {
+            case .starting,
+                 .started:
+                true
+            case .pending,
+                 .cancelled:
+                false
+            }
+        }
+    }
+
+    func start(
+        _ task: URLSessionTask,
+        delegate: URLSessionTaskMetricsDelegate,
+        attemptNumber: UInt,
+        expectedBytesToSend: Int64?,
+        progress: NetworkProgressReporter,
+        continuation: CheckedContinuation<URLSessionTaskExecutionResult, Never>,
+    ) -> Bool {
+        let didCommitStart = state.withLock { currentState in
+            guard currentState == .pending else {
+                return false
+            }
+            guard Task.isCancelled == false else {
+                currentState = .cancelled
+                return false
+            }
+
+            // Install the waiter before committing start so an early completion is retained.
+            delegate.waitForTaskCompletion(continuation)
+            currentState = .starting(cancelAfterResume: false)
+            return true
+        }
+
+        guard didCommitStart else {
+            task.cancel()
+            return false
+        }
+
+        progress.startAttempt(
+            attemptNumber: attemptNumber,
+            expectedBytesToSend: expectedBytesToSend,
+        )
+        task.resume()
+
+        let shouldCancelAfterResume = state.withLock { currentState in
+            guard case let .starting(cancelAfterResume) = currentState else {
+                return false
+            }
+
+            currentState = .started
+            return cancelAfterResume
+        }
+        if shouldCancelAfterResume {
+            task.cancel()
+        }
+
+        return true
+    }
+
+    func cancel(_ task: URLSessionTask) {
+        let shouldCancelTask = state.withLock { currentState in
+            switch currentState {
+            case .pending:
+                currentState = .cancelled
+                return true
+            case .cancelled:
+                return false
+            case .starting:
+                currentState = .starting(cancelAfterResume: true)
+                return false
+            case .started:
+                return true
+            }
+        }
+        if shouldCancelTask {
+            task.cancel()
+        }
     }
 }
 
@@ -479,6 +568,15 @@ struct RedirectLimitExceeded: Sendable {
 private struct URLSessionTaskPayload: Sendable {
     let data: Data
     let response: URLResponse?
+}
+
+/// Separates cancellation before task start from the result of a started URLSession task.
+private enum URLSessionTaskExecutionResult: Sendable {
+    /// The cancellation/start gate prevented the suspended task from starting.
+    case notStarted
+
+    /// The started task delivered its completion result through the session delegate.
+    case completed(Result<URLSessionTaskPayload, any Error>)
 }
 
 /// Tracks task completion separately from completion of metrics collection.
@@ -521,7 +619,7 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
         var metricsCollection = TaskMetricsCollectionState<URLSessionTaskMetrics>()
         var waiters: [CheckedContinuation<URLSessionTaskMetrics?, Never>] = []
         var taskResult: Result<URLSessionTaskPayload, any Error>?
-        var taskResultWaiters: [CheckedContinuation<Result<URLSessionTaskPayload, any Error>, Never>] = []
+        var taskResultWaiters: [CheckedContinuation<URLSessionTaskExecutionResult, Never>] = []
         var receivedData = Data()
         var response: URLResponse?
         var followedRedirectCount: UInt = 0
@@ -599,11 +697,11 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
     }
 
     fileprivate func waitForTaskCompletion(
-        _ continuation: CheckedContinuation<Result<URLSessionTaskPayload, any Error>, Never>,
+        _ continuation: CheckedContinuation<URLSessionTaskExecutionResult, Never>,
     ) {
-        let taskResult = state.withLock { storage -> Result<URLSessionTaskPayload, any Error>? in
+        let taskResult = state.withLock { storage -> URLSessionTaskExecutionResult? in
             if let taskResult = storage.taskResult {
-                return taskResult
+                return .completed(taskResult)
             }
             storage.taskResultWaiters.append(continuation)
             return nil
@@ -683,7 +781,7 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
     ) {
         let (taskResult, taskWaiters) = state.withLock { storage -> (
             Result<URLSessionTaskPayload, any Error>,
-            [CheckedContinuation<Result<URLSessionTaskPayload, any Error>, Never>],
+            [CheckedContinuation<URLSessionTaskExecutionResult, Never>],
         ) in
             let result: Result<URLSessionTaskPayload, any Error> =
                 if let error {
@@ -698,7 +796,7 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
             return (result, waiters)
         }
         for waiter in taskWaiters {
-            waiter.resume(returning: taskResult)
+            waiter.resume(returning: .completed(taskResult))
         }
         resumeReadyWaiters()
     }
@@ -738,6 +836,16 @@ final class URLSessionDelegateRouter: NSObject, URLSessionDataDelegate, Sendable
 
     func register(_ delegate: URLSessionTaskMetricsDelegate, for taskIdentifier: Int) {
         delegates.withLock { $0[taskIdentifier] = delegate }
+    }
+
+    func unregister(_ delegate: URLSessionTaskMetricsDelegate, for taskIdentifier: Int) {
+        delegates.withLock { storage in
+            guard storage[taskIdentifier] === delegate else {
+                return
+            }
+
+            storage.removeValue(forKey: taskIdentifier)
+        }
     }
 
     func urlSession(

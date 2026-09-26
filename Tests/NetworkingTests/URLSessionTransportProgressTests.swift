@@ -115,6 +115,47 @@ struct URLSessionTransportProgressTests {
         #expect(await lateIterator.next() == nil)
     }
 
+    @Test("Cancellation before URLSession resume finishes without publishing an attempt")
+    func cancellationBeforeURLSessionStartDoesNotPublishAnAttempt() async throws {
+        let url = try #require(URL(string: "https://progress.test/before-start"))
+        let startGate = URLSessionStartGate()
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [ProgressURLProtocol.self]
+        let transport = URLSessionTransport(
+            configuration: .init(),
+            sessionConfiguration: sessionConfiguration,
+            beforeTaskStart: { await startGate.waitBeforeStart() },
+        )
+        let coordinator = NetworkProgressCoordinator()
+        var iterator = coordinator.progress.makeAsyncIterator()
+        let request = TransportRequest(
+            httpRequest: HTTPRequest(method: .get, url: url),
+            body: .none,
+            redirectPolicy: .follow,
+            requestID: RequestID(rawValue: UUID()),
+        )
+        let transportTask = Task {
+            await transport.executeWithMetrics(request, progress: coordinator.reporter)
+        }
+
+        await startGate.waitUntilReached()
+        let initialProgress = await iterator.next()
+        transportTask.cancel()
+        await startGate.release()
+        let result = await transportTask.value
+        coordinator.finish(successfully: false)
+
+        guard case let .failure(error, _, didStartTask) = result else {
+            Issue.record("Expected URLSession cancellation before start")
+            return
+        }
+
+        #expect(error is CancellationError)
+        #expect(didStartTask == false)
+        #expect(initialProgress?.attemptNumber == nil)
+        #expect(await iterator.next() == nil)
+    }
+
     @Test("Shared delegate routes upload progress and redirect decisions by task identifier")
     func sharedDelegateRoutesAttemptCallbacksByTaskIdentifier() async throws {
         let firstURL = try #require(URL(string: "https://progress.test/first"))
@@ -372,6 +413,44 @@ private actor URLProtocolGate {
         let pending = waiters
         waiters.removeAll()
         for waiter in pending {
+            waiter.resume()
+        }
+    }
+}
+
+private actor URLSessionStartGate {
+    private var reached = false
+    private var released = false
+    private var reachedWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func waitBeforeStart() async {
+        reached = true
+        resume(reachedWaiters)
+        reachedWaiters.removeAll()
+        guard !released else {
+            return
+        }
+
+        await withCheckedContinuation { releaseWaiters.append($0) }
+    }
+
+    func waitUntilReached() async {
+        guard !reached else {
+            return
+        }
+
+        await withCheckedContinuation { reachedWaiters.append($0) }
+    }
+
+    func release() {
+        released = true
+        resume(releaseWaiters)
+        releaseWaiters.removeAll()
+    }
+
+    private func resume(_ waiters: [CheckedContinuation<Void, Never>]) {
+        for waiter in waiters {
             waiter.resume()
         }
     }
