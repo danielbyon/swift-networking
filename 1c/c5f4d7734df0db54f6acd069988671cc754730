@@ -1,0 +1,59 @@
+Tests/NetworkingTests/RedirectPolicyTests.swift
+  s_fe31a6d7d48a6d::t_a89ea2a252d26f 717-720,722-731
+Tests/NetworkingTestSupportTests/NetworkingTestSupportTests.swift
+  s_fe31a6d7d48a6d::t_a89ea2a252d26f 271-274,291-292
+  s_fe31a6d7d48a6d::t_005eda57bd2066 284-290
+Tests/NetworkingTests/AttemptMetricsTests.swift
+  s_fe31a6d7d48a6d::t_5bba1ce05fa4f6 251
+  s_fe31a6d7d48a6d::t_a89ea2a252d26f 243-250
+Tests/NetworkingTests/NetworkClientRetryTests.swift
+  s_fe31a6d7d48a6d::t_a89ea2a252d26f 618-621,631-640,667-670,672-674,705-706,708-714
+  s_fe31a6d7d48a6d::t_005eda57bd2066 707
+  s_fe31a6d7d48a6d::t_5a28e1157ae90f 715
+Tests/NetworkingTests/URLSessionTransportProgressTests.swift
+  s_fe31a6d7d48a6d::t_005eda57bd2066 152,434,442
+  s_fe31a6d7d48a6d::t_9590ecb14917ad 118-147,149-151,154-158,420-433,435-441,443-453,455-456
+  s_fe31a6d7d48a6d::t_cb536e0a33565e 148,153
+  s_fe31a6d7d48a6d::t_ce8847e267188b 454
+  s_fe31a6d7d48a6d::t_89827b57ab9557 457
+Tests/NetworkingTests/AuthenticationTests.swift
+  s_fe31a6d7d48a6d::t_a89ea2a252d26f 770-773,783-792
+Tests/NetworkingTests/NetworkClientProgressTests.swift
+  s_fe31a6d7d48a6d::t_95be9bc89fb29f 204-207,209-224,226-241,304-353,355-361,363-377
+  s_fe31a6d7d48a6d::t_005eda57bd2066 208,225,354,362
+  s_fe31a6d7d48a6d::t_02bb5c593d1a71 280-298
+  s_fe31a6d7d48a6d::t_36fe32fdeba01f 378
+Sources/Networking/NetworkClient.swift
+  s_fe31a6d7d48a6d::t_cfbf8f03df90ac 573,575,577-578
+  s_fe31a6d7d48a6d::t_6307906b892304 472,476-477,480,484,488,490
+  s_fe31a6d7d48a6d::t_ac626e2e4c3f83 393,396,398,402-406,412-414
+  s_fe31a6d7d48a6d::t_42101a00f302ba 448
+  s_fe31a6d7d48a6d::t_9629da54b6621d 460-461,463-464
+  s_fe31a6d7d48a6d::t_f53f6be7b628ea 446-447,449-450,452-457,468-471,473-475,479,481-483,485-486,514,517-519,523,532,535-539
+  s_fe31a6d7d48a6d::t_f2745f61aafc9f 508
+  s_fe31a6d7d48a6d::t_a52df1d5c83757 574,576,579-581,622,700,702,704,784,799
+  s_fe31a6d7d48a6d::t_7fa102c12d9d55 841-845,847-850
+  s_fe31a6d7d48a6d::t_a3efea74b4bc71 395
+  s_fe31a6d7d48a6d::t_762fad3d1d1615 458-459,462,465-467
+  s_fe31a6d7d48a6d::t_908b906ca42450 160,168,170-180,189-191
+  s_fe31a6d7d48a6d::t_f6f36091ed725b 310,317,321,332
+  s_fe31a6d7d48a6d::t_c53e2e78d61b9c 391-392,394,397,401,409,415
+  s_fe31a6d7d48a6d::t_beed593527d175 451,478,487,489,491-507,509-513,515-516,520-522,524-531,533-534
+  s_fe31a6d7d48a6d::t_005eda57bd2066 846
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1cc5f4d7734df0db54f6acd069988671cc754730",
+  "prompts": {},
+  "sessions": {
+    "s_fe31a6d7d48a6d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0dc18-f943-7ba3-ba9c-ec5f226648a9",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
