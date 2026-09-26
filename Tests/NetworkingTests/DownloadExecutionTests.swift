@@ -594,6 +594,94 @@ struct DownloadExecutionTests {
         try FileManager.default.removeItem(at: source)
     }
 
+    @Test("Repeated removal preserves a file recreated at the removed path")
+    func repeatedRemovalPreservesRecreatedPath() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe6]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        var downloadedFile: DownloadedFile? = try await client.send(
+            Request(endpoint: makeDownloadEndpoint()),
+        )
+        .value
+        let source = try #require(await transport.createdFileURLs().first)
+        defer { try? FileManager.default.removeItem(at: source) }
+        let unrelatedContents = Data([0xec])
+
+        try downloadedFile?.remove()
+        try unrelatedContents.write(to: source)
+        try downloadedFile?.remove()
+
+        #expect(try Data(contentsOf: source) == unrelatedContents)
+        downloadedFile = nil
+        #expect(try Data(contentsOf: source) == unrelatedContents)
+    }
+
+    @Test("Removal of an already absent file permanently ends ownership")
+    func removalOfAlreadyAbsentFileIsTerminal() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe7]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        var downloadedFile: DownloadedFile? = try await client.send(
+            Request(endpoint: makeDownloadEndpoint()),
+        )
+        .value
+        let source = try #require(await transport.createdFileURLs().first)
+        defer { try? FileManager.default.removeItem(at: source) }
+        let unrelatedContents = Data([0xed])
+
+        try FileManager.default.removeItem(at: source)
+        try downloadedFile?.remove()
+        try unrelatedContents.write(to: source)
+        try downloadedFile?.remove()
+
+        #expect(try Data(contentsOf: source) == unrelatedContents)
+        downloadedFile = nil
+        #expect(try Data(contentsOf: source) == unrelatedContents)
+    }
+
+    @Test("Moving after removal preserves a recreated source and leaves the destination absent")
+    func moveAfterRemovalPreservesRecreatedSource() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe8]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        var downloadedFile: DownloadedFile? = try await client.send(
+            Request(endpoint: makeDownloadEndpoint()),
+        )
+        .value
+        let source = try #require(await transport.createdFileURLs().first)
+        let destination = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("swift-networking-move-after-remove-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: source) }
+        let unrelatedContents = Data([0xee])
+
+        try downloadedFile?.remove()
+        try unrelatedContents.write(to: source)
+
+        var receivedExpectedError = false
+        do {
+            try downloadedFile?.move(to: destination)
+            Issue.record("Expected moving a removed file to fail")
+        } catch let error as DownloadFileError {
+            if case let .moveFailed(errorSource, errorDestination, underlyingError) = error {
+                receivedExpectedError = true
+                #expect(errorSource == source)
+                #expect(errorDestination == destination)
+                let fileError = underlyingError as NSError
+                #expect(fileError.domain == NSCocoaErrorDomain)
+                #expect(fileError.code == NSFileNoSuchFileError)
+            } else {
+                Issue.record("Unexpected download file error: \(error)")
+            }
+        } catch {
+            Issue.record("Unexpected error moving a removed file: \(error)")
+        }
+
+        #expect(receivedExpectedError)
+        #expect(try Data(contentsOf: source) == unrelatedContents)
+        #expect(FileManager.default.fileExists(atPath: destination.path) == false)
+        downloadedFile = nil
+        #expect(try Data(contentsOf: source) == unrelatedContents)
+        #expect(FileManager.default.fileExists(atPath: destination.path) == false)
+    }
+
     @Test("A removal failure reports the current file URL")
     func removeFailureReportsCurrentURL() async throws {
         let directory = FileManager.default
@@ -627,6 +715,9 @@ struct DownloadExecutionTests {
 
         #expect(receivedExpectedError)
         #expect(downloadedFile.url == destination)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+        try downloadedFile.remove()
+        #expect(FileManager.default.fileExists(atPath: destination.path) == false)
     }
 
     @Test("Resolved destinations run once after authentication, retry, validation, and request copies")

@@ -14,15 +14,21 @@ import Synchronization
 /// transferring ownership. Explicit transfers update the current URL and cleanup responsibility
 /// together so an old path is never removed after it has been handed to another owner.
 package final class DownloadedFileStorage: Sendable {
+    private enum Lifecycle: Sendable {
+        case libraryOwned
+        case callerOwned
+        case removed
+    }
+
     private struct State: Sendable {
         var currentURL: URL
-        var cleanupURL: URL?
+        var lifecycle: Lifecycle
     }
 
     private let state: Mutex<State>
 
     private init(url: URL) {
-        state = Mutex(State(currentURL: url, cleanupURL: url))
+        state = Mutex(State(currentURL: url, lifecycle: .libraryOwned))
     }
 
     /// The current location for internal response processing without transferring ownership.
@@ -41,7 +47,9 @@ package final class DownloadedFileStorage: Sendable {
     /// Permanently transfers URL cleanup responsibility to the caller.
     package func transferURLToCaller() -> URL {
         state.withLock { current in
-            current.cleanupURL = nil
+            if current.lifecycle == .libraryOwned {
+                current.lifecycle = .callerOwned
+            }
             return current.currentURL
         }
     }
@@ -59,16 +67,20 @@ package final class DownloadedFileStorage: Sendable {
     /// Removes the current file, keeping cleanup disarmed if the path is already absent.
     package func remove() throws {
         try state.withLock { current in
+            guard current.lifecycle != .removed else {
+                return
+            }
+
             let url = current.currentURL
             do {
                 try FileManager.default.removeItem(at: url)
-                current.cleanupURL = nil
+                current.lifecycle = .removed
             } catch {
                 guard Self.isMissingFileError(error) else {
                     throw DownloadFileError.removeFailed(url: url, underlyingError: error)
                 }
 
-                current.cleanupURL = nil
+                current.lifecycle = .removed
             }
         }
     }
@@ -76,16 +88,16 @@ package final class DownloadedFileStorage: Sendable {
     /// Removes the library-owned file and retries automatically if a transient failure leaves it.
     package func discard() {
         state.withLock { current in
-            guard let cleanupURL = current.cleanupURL else {
+            guard current.lifecycle == .libraryOwned else {
                 return
             }
 
             do {
-                try FileManager.default.removeItem(at: cleanupURL)
-                current.cleanupURL = nil
+                try FileManager.default.removeItem(at: current.currentURL)
+                current.lifecycle = .removed
             } catch {
                 if Self.isMissingFileError(error) {
-                    current.cleanupURL = nil
+                    current.lifecycle = .removed
                 }
             }
         }
@@ -104,16 +116,20 @@ package final class DownloadedFileStorage: Sendable {
         try state.withLock { current in
             let source = current.currentURL
             do {
+                guard current.lifecycle != .removed else {
+                    throw NSError(domain: NSCocoaErrorDomain, code: NSFileNoSuchFileError)
+                }
+
                 if Self.isSameFileLocation(source, destination),
                    FileManager.default.fileExists(atPath: source.path) {
                     current.currentURL = destination
-                    current.cleanupURL = nil
+                    current.lifecycle = .callerOwned
                     return
                 }
 
                 try Self.moveFile(from: source, to: destination, collisionPolicy: collisionPolicy)
                 current.currentURL = destination
-                current.cleanupURL = nil
+                current.lifecycle = .callerOwned
             } catch {
                 switch failure {
                 case .finalization:
