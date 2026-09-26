@@ -11,11 +11,21 @@ import Synchronization
 private final class NetworkTaskState<Value: Sendable>: Sendable {
     private struct Storage: Sendable {
         var terminalResult: Result<Response<Value>, any Error>?
+        var pendingResult: Result<Response<Value>, any Error>?
         var waiters: [UUID: CheckedContinuation<Response<Value>, any Error>] = [:]
         var cancelledWaiters: Set<UUID> = []
     }
 
     private let storage = Mutex(Storage())
+    private let progressCoordinator = NetworkProgressCoordinator()
+
+    var progress: NetworkProgressSequence {
+        progressCoordinator.progress
+    }
+
+    var reporter: NetworkProgressReporter {
+        progressCoordinator.reporter
+    }
 
     func value(for waiterID: UUID) async throws -> Response<Value> {
         try await withCheckedThrowingContinuation { continuation in
@@ -53,14 +63,39 @@ private final class NetworkTaskState<Value: Sendable>: Sendable {
     }
 
     func complete(with result: Result<Response<Value>, any Error>) {
+        guard beginCompletion(with: result) else {
+            return
+        }
+
+        if case .success = result {
+            progressCoordinator.finish(successfully: true)
+        } else {
+            progressCoordinator.finish(successfully: false)
+        }
+        finishCompletion(with: result)
+    }
+
+    private func beginCompletion(with result: Result<Response<Value>, any Error>) -> Bool {
+        storage.withLock { storage in
+            guard storage.terminalResult == nil, storage.pendingResult == nil else {
+                return false
+            }
+
+            storage.pendingResult = result
+            return true
+        }
+    }
+
+    private func finishCompletion(with result: Result<Response<Value>, any Error>) {
         var waiters: [CheckedContinuation<Response<Value>, any Error>] = []
 
         storage.withLock { storage in
-            guard storage.terminalResult == nil else {
+            guard storage.terminalResult == nil, storage.pendingResult != nil else {
                 return
             }
 
             storage.terminalResult = result
+            storage.pendingResult = nil
             waiters = Array(storage.waiters.values)
             storage.waiters.removeAll()
         }
@@ -71,26 +106,14 @@ private final class NetworkTaskState<Value: Sendable>: Sendable {
     }
 
     func cancelShared() -> Bool {
-        var waiters: [CheckedContinuation<Response<Value>, any Error>] = []
         let cancellation = Result<Response<Value>, any Error>.failure(CancellationError())
-        let didCancel = storage.withLock { storage in
-            guard storage.terminalResult == nil else {
-                return false
-            }
-
-            storage.terminalResult = cancellation
-            waiters = Array(storage.waiters.values)
-            storage.waiters.removeAll()
-            storage.cancelledWaiters.removeAll()
-            return true
+        guard beginCompletion(with: cancellation) else {
+            return false
         }
 
-        if didCancel {
-            for waiter in waiters {
-                waiter.resume(with: cancellation)
-            }
-        }
-        return didCancel
+        progressCoordinator.finish(successfully: false)
+        finishCompletion(with: cancellation)
+        return true
     }
 }
 
@@ -102,20 +125,34 @@ public final class NetworkTask<Value: Sendable>: Sendable {
     private let state: NetworkTaskState<Value>
     private let runner: Task<Void, Never>
 
+    /// The reusable multicast view of this execution's latest transfer state.
+    public let progress: NetworkProgressSequence
+
     package init(
         requestID: RequestID,
-        operation: @escaping @Sendable () async throws -> Response<Value>,
+        operation: @escaping @Sendable (NetworkProgressReporter) async throws -> Response<Value>,
     ) {
         self.requestID = requestID
         let taskState = NetworkTaskState<Value>()
         state = taskState
+        progress = taskState.progress
+        let reporter = taskState.reporter
         runner = Task {
             do {
-                let response = try await operation()
+                let response = try await operation(reporter)
                 taskState.complete(with: .success(response))
             } catch {
                 taskState.complete(with: .failure(error))
             }
+        }
+    }
+
+    package convenience init(
+        requestID: RequestID,
+        operation: @escaping @Sendable () async throws -> Response<Value>,
+    ) {
+        self.init(requestID: requestID) { _ in
+            try await operation()
         }
     }
 

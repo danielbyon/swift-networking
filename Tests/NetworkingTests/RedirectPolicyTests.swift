@@ -714,9 +714,21 @@ private actor RedirectPolicyRecordingTransport: NetworkTransport {
         throw URLError(.unsupportedURL)
     }
 
-    func executeWithMetrics(_ request: TransportRequest) async -> NetworkTransportResult {
+    func executeWithMetrics(
+        _ request: TransportRequest,
+        progress: NetworkProgressReporter,
+    ) async -> NetworkTransportResult {
         requests.append(request)
-        return results.removeFirst()
+        let result = results.removeFirst()
+        switch result {
+        case .success,
+             .redirectLimitExceeded,
+             .failure(_, _, true):
+            progress.startAttempt(attemptNumber: request.attemptNumber, expectedBytesToSend: nil)
+        case .failure(_, _, false):
+            break
+        }
+        return result
     }
 
     func receivedRequests() -> [TransportRequest] {

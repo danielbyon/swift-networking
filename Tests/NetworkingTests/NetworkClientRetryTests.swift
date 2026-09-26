@@ -615,7 +615,10 @@ private actor ScriptedRetryTransport: NetworkTransport {
         throw RetryMarkerError(identifier: "unexpected legacy transport call")
     }
 
-    func executeWithMetrics(_ request: TransportRequest) async -> NetworkTransportResult {
+    func executeWithMetrics(
+        _ request: TransportRequest,
+        progress: NetworkProgressReporter,
+    ) async -> NetworkTransportResult {
         requests.append(request)
         guard !results.isEmpty else {
             return .failure(
@@ -625,7 +628,16 @@ private actor ScriptedRetryTransport: NetworkTransport {
             )
         }
 
-        return results.removeFirst()
+        let result = results.removeFirst()
+        switch result {
+        case .success,
+             .redirectLimitExceeded,
+             .failure(_, _, true):
+            progress.startAttempt(attemptNumber: request.attemptNumber, expectedBytesToSend: nil)
+        case .failure(_, _, false):
+            break
+        }
+        return result
     }
 
     var executionCount: Int {
@@ -652,8 +664,14 @@ private actor GatedRetryFailureTransport: NetworkTransport {
         throw RetryMarkerError(identifier: "unexpected legacy transport call")
     }
 
-    func executeWithMetrics(_ request: TransportRequest) async -> NetworkTransportResult {
+    func executeWithMetrics(
+        _ request: TransportRequest,
+        progress: NetworkProgressReporter,
+    ) async -> NetworkTransportResult {
         requests.append(request)
+        if isStarted(result) {
+            progress.startAttempt(attemptNumber: request.attemptNumber, expectedBytesToSend: nil)
+        }
         return await withCheckedContinuation { continuation in
             resultContinuation = continuation
             entered = true
@@ -683,6 +701,17 @@ private actor GatedRetryFailureTransport: NetworkTransport {
 
     var executionCount: Int {
         requests.count
+    }
+
+    private func isStarted(_ result: NetworkTransportResult) -> Bool {
+        switch result {
+        case .success,
+             .redirectLimitExceeded,
+             .failure(_, _, true):
+            true
+        case .failure(_, _, false):
+            false
+        }
     }
 }
 

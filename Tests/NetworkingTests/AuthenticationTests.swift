@@ -767,7 +767,10 @@ private actor AuthenticationScriptedTransport: NetworkTransport {
         throw AuthenticationTestError.unexpectedTransportCall
     }
 
-    func executeWithMetrics(_ request: TransportRequest) async -> NetworkTransportResult {
+    func executeWithMetrics(
+        _ request: TransportRequest,
+        progress: NetworkProgressReporter,
+    ) async -> NetworkTransportResult {
         requests.append(request)
         guard !results.isEmpty else {
             return .failure(
@@ -777,7 +780,16 @@ private actor AuthenticationScriptedTransport: NetworkTransport {
             )
         }
 
-        return results.removeFirst()
+        let result = results.removeFirst()
+        switch result {
+        case .success,
+             .redirectLimitExceeded,
+             .failure(_, _, true):
+            progress.startAttempt(attemptNumber: request.attemptNumber, expectedBytesToSend: nil)
+        case .failure(_, _, false):
+            break
+        }
+        return result
     }
 
     var executionCount: Int {

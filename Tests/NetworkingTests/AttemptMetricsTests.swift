@@ -240,8 +240,15 @@ private struct MetricsFailureTransport: NetworkTransport {
         throw AttemptTransportFailure.expected
     }
 
-    func executeWithMetrics(_: TransportRequest) async -> NetworkTransportResult {
-        .failure(
+    func executeWithMetrics(
+        _ request: TransportRequest,
+        progress: NetworkProgressReporter,
+    ) async -> NetworkTransportResult {
+        progress.startAttempt(
+            attemptNumber: request.attemptNumber,
+            expectedBytesToSend: nil,
+        )
+        return .failure(
             error: AttemptTransportFailure.expected,
             rawTaskMetrics: nil,
             didStartTask: true,
