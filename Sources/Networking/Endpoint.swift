@@ -16,11 +16,25 @@ package enum EndpointOperation: Sendable, Equatable {
     /// Sends the required request body with upload-task semantics and decodes an in-memory response.
     case upload
 
-    /// Reserves the internal operation value for file-backed download responses.
+    /// Writes the response to a temporary file and returns an owned download token.
     case download
 }
 
-/// A reusable HTTP contract that defines an operation's method, route, query, headers, authentication, and response decoding.
+/// Describes whether a response is decoded from bytes or transferred as an owned download file.
+package enum EndpointResponseHandling<Output: Sendable>: Sendable {
+    case decode(ResponseDecoding<Output>)
+    case download(@Sendable (LibraryOwnedTemporaryFile) -> Output)
+
+    package var inferredAccept: String? {
+        guard case let .decode(decoding) = self else {
+            return nil
+        }
+
+        return decoding.inferredAccept
+    }
+}
+
+/// A reusable HTTP contract that defines an operation's method, route, query, headers, authentication, and response handling.
 public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Sendable {
     private enum HeaderStorage: Sendable {
         case fixed(HTTPFields)
@@ -33,7 +47,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
     package let bodyEncoding: BodyEncoding<Body>
     /// The non-public operation semantics retained by every endpoint copy.
     package let operation: EndpointOperation
-    package let response: ResponseDecoding<Output>
+    package let response: EndpointResponseHandling<Output>
     package let authenticationRequirement: AuthenticationRequirement
     package let jsonEncoderConfiguration: JSONEncoderConfiguration
     package let jsonDecoderConfiguration: JSONDecoderConfiguration
@@ -50,7 +64,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
         query: QueryEncoding<Input>,
         bodyEncoding: BodyEncoding<Body>,
         operation: EndpointOperation,
-        response: ResponseDecoding<Output>,
+        response: EndpointResponseHandling<Output>,
         authenticationRequirement: AuthenticationRequirement = .none,
         jsonEncoderConfiguration: @escaping JSONEncoderConfiguration = { _ in },
         jsonDecoderConfiguration: @escaping JSONDecoderConfiguration = { _ in },
@@ -496,7 +510,7 @@ extension Endpoint where Body == Never {
             query: query,
             bodyEncoding: .bodyless,
             operation: .data,
-            response: response,
+            response: .decode(response),
         )
     }
 }
@@ -524,7 +538,7 @@ extension Endpoint {
             query: query,
             bodyEncoding: body,
             operation: .data,
-            response: response,
+            response: .decode(response),
         )
     }
 }
@@ -555,7 +569,62 @@ extension Endpoint {
             query: query,
             bodyEncoding: body,
             operation: .upload,
-            response: response,
+            response: .decode(response),
+        )
+    }
+}
+
+extension Endpoint where Body == Never, Output == DownloadedFile {
+    /// Creates a bodyless download endpoint that returns the accepted response as an owned file.
+    ///
+    /// The endpoint does not decode response bytes or infer an `Accept` field from a decoder.
+    ///
+    /// - Parameters:
+    ///   - method: The explicit HTTP method for every invocation.
+    ///   - route: The endpoint-owned route.
+    ///   - query: The endpoint-owned query mechanism, defaulting to no endpoint query values.
+    /// - Returns: An immutable bodyless download endpoint.
+    public static func download(
+        method: HTTPRequest.Method,
+        route: EndpointRoute<Input>,
+        query: QueryEncoding<Input> = .none,
+    ) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            bodyEncoding: .bodyless,
+            operation: .download,
+            response: .download { DownloadedFile(ownership: $0) },
+        )
+    }
+}
+
+extension Endpoint where Output == DownloadedFile {
+    /// Creates a download endpoint that prepares an in-memory request body for each attempt.
+    ///
+    /// A file-backed prepared request body is rejected during preflight before any attempt starts.
+    /// The response is not decoded from memory and does not infer an `Accept` field from a decoder.
+    ///
+    /// - Parameters:
+    ///   - method: The explicit HTTP method for every invocation.
+    ///   - route: The endpoint-owned route.
+    ///   - body: The strategy used to prepare the immutable request body for each attempt.
+    ///   - query: The endpoint-owned query mechanism, defaulting to no endpoint query values.
+    /// - Returns: An immutable bodyful download endpoint.
+    public static func download(
+        method: HTTPRequest.Method,
+        route: EndpointRoute<Input>,
+        body: BodyEncoding<Body>,
+        query: QueryEncoding<Input> = .none,
+    ) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            bodyEncoding: body,
+            operation: .download,
+            response: .download { DownloadedFile(ownership: $0) },
         )
     }
 }

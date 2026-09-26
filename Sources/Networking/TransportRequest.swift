@@ -19,6 +19,9 @@ package enum TransportExecution: Sendable, Equatable {
     /// Sends the caller-owned local file through a URLSession upload task.
     case uploadFromFile(URL)
 
+    /// Receives the response through a URLSession download task, optionally sending in-memory data.
+    case download(body: Data?)
+
     /// Resolves operation/body compatibility before any transport attempt starts.
     package static func resolve(
         operation: EndpointOperation,
@@ -44,7 +47,14 @@ package enum TransportExecution: Sendable, Equatable {
                 .uploadFromFile(url)
             }
         case .download:
-            nil
+            switch body {
+            case .none:
+                .download(body: nil)
+            case let .data(data):
+                .download(body: data)
+            case .file:
+                nil
+            }
         }
     }
 }

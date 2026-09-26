@@ -34,6 +34,47 @@ public enum BodyRetentionPolicy: Sendable {
             )
         }
     }
+
+    /// Retains response-body bytes from a file without reading beyond the configured prefix.
+    ///
+    /// The no-retention policy returns without opening or reading the file. The bounded policy
+    /// reads only the requested prefix, including no body bytes for a zero or negative limit.
+    package func retain(fileAt url: URL) throws -> RetainedBody? {
+        switch self {
+        case .none:
+            return nil
+        case .unlimited:
+            let data = try Data(contentsOf: url)
+            return RetainedBody(data: data, originalByteCount: Int64(data.count))
+        case let .upTo(byteCount):
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            guard let size = attributes[.size] as? NSNumber else {
+                throw CocoaError(.fileReadUnknown)
+            }
+
+            let originalByteCount = size.int64Value
+            let maximumRetainedByteCount = max(0, byteCount)
+            guard maximumRetainedByteCount > 0 else {
+                return RetainedBody(data: Data(), originalByteCount: originalByteCount)
+            }
+
+            let file = try FileHandle(forReadingFrom: url)
+            defer { try? file.close() }
+
+            var data = Data()
+            while data.count < maximumRetainedByteCount {
+                let remainingByteCount = maximumRetainedByteCount - data.count
+                let readCount = min(64 * 1_024, remainingByteCount)
+                let chunk = try file.read(upToCount: readCount)
+                guard let chunk, chunk.isEmpty == false else {
+                    break
+                }
+
+                data.append(chunk)
+            }
+            return RetainedBody(data: data, originalByteCount: originalByteCount)
+        }
+    }
 }
 
 /// A retained response-body prefix and metadata describing the original body.

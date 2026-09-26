@@ -162,6 +162,141 @@ package protocol NetworkTransport: Sendable {
         _ request: TransportRequest,
         progress: NetworkProgressReporter,
     ) async -> NetworkTransportResult
+    /// Executes a download attempt that returns an owned file rather than response bytes.
+    func executeDownloadWithMetrics(
+        _ request: TransportRequest,
+        progress: NetworkProgressReporter,
+    ) async -> NetworkTransportDownloadResult
+}
+
+package enum TransportExecutionError: Error, Sendable {
+    case downloadRequiresFileBackedResult
+    case responseBodyRepresentationMismatch
+}
+
+private enum SuccessfulTransportBody: Sendable {
+    case data(Data)
+    case file(LibraryOwnedTemporaryFile)
+
+    var receivedResponseBody: ReceivedResponseBody {
+        switch self {
+        case let .data(data):
+            .data(data)
+        case let .file(file):
+            .file(file.url)
+        }
+    }
+
+    func retainedBody(using policy: BodyRetentionPolicy) throws -> RetainedBody? {
+        switch self {
+        case let .data(data):
+            policy.retain(data)
+        case let .file(file):
+            try policy.retain(fileAt: file.url)
+        }
+    }
+
+    func retainedBodyForAcceptedResponse(using policy: BodyRetentionPolicy) -> RetainedBody? {
+        switch self {
+        case let .data(data):
+            policy.retain(data)
+        case .file:
+            nil
+        }
+    }
+
+    func discardFile() {
+        guard case let .file(file) = self else {
+            return
+        }
+
+        file.discard()
+    }
+}
+
+private func makeSuccessfulResponseValue<Output: Sendable>(
+    responseHandling: EndpointResponseHandling<Output>,
+    body: SuccessfulTransportBody,
+    response: HTTPResponse,
+    clientJSONDecoderConfiguration: JSONDecoderConfiguration,
+    endpointJSONDecoderConfiguration: JSONDecoderConfiguration,
+) throws -> Output {
+    switch (responseHandling, body) {
+    case let (.decode(decoding), .data(data)):
+        return try decoding.decode(
+            data,
+            response: response,
+            clientJSONDecoderConfiguration: clientJSONDecoderConfiguration,
+            endpointJSONDecoderConfiguration: endpointJSONDecoderConfiguration,
+        )
+    case let (.download(makeValue), .file(file)):
+        return makeValue(file)
+    default:
+        body.discardFile()
+        throw TransportExecutionError.responseBodyRepresentationMismatch
+    }
+}
+
+private enum TransportAttemptResult: Sendable {
+    case success(body: SuccessfulTransportBody, response: HTTPResponse, rawTaskMetrics: URLSessionTaskMetrics?)
+    case failure(error: any Error, rawTaskMetrics: URLSessionTaskMetrics?, didStartTask: Bool)
+    case redirectLimitExceeded(
+        maximumRedirects: UInt,
+        lastResponse: HTTPResponse?,
+        rawTaskMetrics: URLSessionTaskMetrics?,
+    )
+}
+
+extension NetworkTransportResult {
+    fileprivate var attemptResult: TransportAttemptResult {
+        switch self {
+        case let .success(data, response, rawTaskMetrics):
+            .success(
+                body: .data(data),
+                response: response,
+                rawTaskMetrics: rawTaskMetrics,
+            )
+        case let .failure(error, rawTaskMetrics, didStartTask):
+            .failure(error: error, rawTaskMetrics: rawTaskMetrics, didStartTask: didStartTask)
+        case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics):
+            .redirectLimitExceeded(
+                maximumRedirects: maximumRedirects,
+                lastResponse: lastResponse,
+                rawTaskMetrics: rawTaskMetrics,
+            )
+        }
+    }
+}
+
+extension NetworkTransportDownloadResult {
+    fileprivate var attemptResult: TransportAttemptResult {
+        switch self {
+        case let .success(file, response, rawTaskMetrics):
+            .success(body: .file(file), response: response, rawTaskMetrics: rawTaskMetrics)
+        case let .failure(error, rawTaskMetrics, didStartTask):
+            .failure(error: error, rawTaskMetrics: rawTaskMetrics, didStartTask: didStartTask)
+        case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics):
+            .redirectLimitExceeded(
+                maximumRedirects: maximumRedirects,
+                lastResponse: lastResponse,
+                rawTaskMetrics: rawTaskMetrics,
+            )
+        }
+    }
+}
+
+private func executeTransportAttempt(
+    using transport: any NetworkTransport,
+    request: TransportRequest,
+    progress: NetworkProgressReporter,
+) async -> TransportAttemptResult {
+    if request.operation == .download {
+        let result = await transport.executeDownloadWithMetrics(request, progress: progress)
+        return result.attemptResult
+    }
+
+    let result = await transport.executeWithMetrics(request, progress: progress)
+    return result.attemptResult
 }
 
 extension NetworkTransport {
@@ -174,6 +309,14 @@ extension NetworkTransport {
         _ request: TransportRequest,
         progress: NetworkProgressReporter,
     ) async -> NetworkTransportResult {
+        guard request.operation != .download else {
+            return .failure(
+                error: TransportExecutionError.downloadRequiresFileBackedResult,
+                rawTaskMetrics: nil,
+                didStartTask: false,
+            )
+        }
+
         progress.startAttempt(
             attemptNumber: request.attemptNumber,
             expectedBytesToSend: expectedRequestBodyByteCount(request.execution),
@@ -189,6 +332,18 @@ extension NetworkTransport {
     /// Executes through the progress-aware transport seam without retaining progress updates.
     package func executeWithMetrics(_ request: TransportRequest) async -> NetworkTransportResult {
         await executeWithMetrics(request, progress: NetworkProgressCoordinator().reporter)
+    }
+
+    /// Rejects downloads for transports that only provide in-memory response bytes.
+    package func executeDownloadWithMetrics(
+        _: TransportRequest,
+        progress _: NetworkProgressReporter,
+    ) async -> NetworkTransportDownloadResult {
+        .failure(
+            error: TransportExecutionError.downloadRequiresFileBackedResult,
+            rawTaskMetrics: nil,
+            didStartTask: false,
+        )
     }
 }
 
@@ -272,6 +427,10 @@ package func makeURLRequest(
         if let body {
             urlRequest.httpBody = body
         }
+    case let .download(body):
+        if let body {
+            urlRequest.httpBody = body
+        }
     case .uploadFromData,
          .uploadFromFile:
         urlRequest.httpBody = nil
@@ -333,9 +492,13 @@ package struct URLSessionTransport: NetworkTransport {
     }
 
     package func execute(_ request: TransportRequest) async throws -> (Data, HTTPResponse) {
+        guard request.operation != .download else {
+            throw TransportExecutionError.downloadRequiresFileBackedResult
+        }
+
         switch await executeWithMetrics(request) {
         case let .success(data, response, _):
-            (data, response)
+            return (data, response)
         case let .failure(error, _, _):
             throw error
         case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics):
@@ -364,6 +527,70 @@ package struct URLSessionTransport: NetworkTransport {
         _ request: TransportRequest,
         progress: NetworkProgressReporter,
     ) async -> NetworkTransportResult {
+        guard request.operation != .download else {
+            return .failure(
+                error: TransportExecutionError.downloadRequiresFileBackedResult,
+                rawTaskMetrics: nil,
+                didStartTask: false,
+            )
+        }
+
+        switch await executeAttempt(request, progress: progress) {
+        case let .success(body: .data(data), response, rawTaskMetrics):
+            return .success(data: data, response: response, rawTaskMetrics: rawTaskMetrics)
+        case .success(body: .file, response: _, rawTaskMetrics: _):
+            return .failure(
+                error: TransportExecutionError.responseBodyRepresentationMismatch,
+                rawTaskMetrics: nil,
+                didStartTask: true,
+            )
+        case let .failure(error, rawTaskMetrics, didStartTask):
+            return .failure(error: error, rawTaskMetrics: rawTaskMetrics, didStartTask: didStartTask)
+        case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics):
+            return .redirectLimitExceeded(
+                maximumRedirects: maximumRedirects,
+                lastResponse: lastResponse,
+                rawTaskMetrics: rawTaskMetrics,
+            )
+        }
+    }
+
+    package func executeDownloadWithMetrics(
+        _ request: TransportRequest,
+        progress: NetworkProgressReporter,
+    ) async -> NetworkTransportDownloadResult {
+        guard request.operation == .download else {
+            return .failure(
+                error: TransportExecutionError.responseBodyRepresentationMismatch,
+                rawTaskMetrics: nil,
+                didStartTask: false,
+            )
+        }
+
+        switch await executeAttempt(request, progress: progress) {
+        case let .success(body: .file(file), response, rawTaskMetrics):
+            return .success(file: file, response: response, rawTaskMetrics: rawTaskMetrics)
+        case .success(body: .data, response: _, rawTaskMetrics: _):
+            return .failure(
+                error: TransportExecutionError.responseBodyRepresentationMismatch,
+                rawTaskMetrics: nil,
+                didStartTask: true,
+            )
+        case let .failure(error, rawTaskMetrics, didStartTask):
+            return .failure(error: error, rawTaskMetrics: rawTaskMetrics, didStartTask: didStartTask)
+        case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics):
+            return .redirectLimitExceeded(
+                maximumRedirects: maximumRedirects,
+                lastResponse: lastResponse,
+                rawTaskMetrics: rawTaskMetrics,
+            )
+        }
+    }
+
+    private func executeAttempt(
+        _ request: TransportRequest,
+        progress: NetworkProgressReporter,
+    ) async -> TransportAttemptResult {
         guard let execution = request.execution,
               let urlRequest = makeURLRequest(
                   request,
@@ -378,7 +605,7 @@ package struct URLSessionTransport: NetworkTransport {
             initialRequest: urlRequest,
             progressReporter: progress,
         )
-        let task: URLSessionTask =
+        let task =
             switch execution {
             case .data:
                 session.dataTask(with: urlRequest)
@@ -386,6 +613,8 @@ package struct URLSessionTransport: NetworkTransport {
                 session.uploadTask(with: urlRequest, from: body)
             case let .uploadFromFile(fileURL):
                 session.uploadTask(with: urlRequest, fromFile: fileURL)
+            case .download:
+                session.downloadTask(with: urlRequest)
             }
 
         delegateRouter.register(delegate, for: task.taskIdentifier)
@@ -425,21 +654,24 @@ package struct URLSessionTransport: NetworkTransport {
             )
         }
 
-        let data: Data
-        let urlResponse: URLResponse?
+        let payload: URLSessionTaskPayload
         switch taskResult {
-        case let .success(payload):
-            data = payload.data
-            urlResponse = payload.response
+        case let .success(completedPayload):
+            payload = completedPayload
         case let .failure(error):
             return .failure(error: error, rawTaskMetrics: rawTaskMetrics, didStartTask: true)
         }
 
-        guard let response = (urlResponse as? HTTPURLResponse)?.httpResponse else {
+        guard let response = (payload.response as? HTTPURLResponse)?.httpResponse else {
             return .failure(error: URLError(.badServerResponse), rawTaskMetrics: rawTaskMetrics, didStartTask: true)
         }
 
-        return .success(data: data, response: response, rawTaskMetrics: rawTaskMetrics)
+        switch payload.body {
+        case let .data(data):
+            return .success(body: .data(data), response: response, rawTaskMetrics: rawTaskMetrics)
+        case let .file(file):
+            return .success(body: .file(file), response: response, rawTaskMetrics: rawTaskMetrics)
+        }
     }
 }
 
@@ -549,6 +781,12 @@ private func expectedRequestBodyByteCount(_ execution: TransportExecution?) -> I
         }
 
         return Int64(exactly: body.count)
+    case let .download(body):
+        guard let body else {
+            return 0
+        }
+
+        return Int64(exactly: body.count)
     case let .uploadFromData(body):
         return Int64(exactly: body.count)
     case let .uploadFromFile(fileURL):
@@ -565,9 +803,51 @@ struct RedirectLimitExceeded: Sendable {
     let lastResponse: HTTPResponse?
 }
 
+private enum URLSessionTaskBody: Sendable {
+    case data(Data)
+    case file(LibraryOwnedTemporaryFile)
+}
+
 private struct URLSessionTaskPayload: Sendable {
-    let data: Data
+    let body: URLSessionTaskBody
     let response: URLResponse?
+}
+
+private func makeURLSessionTaskResult(
+    error: (any Error)?,
+    isDownloadTask: Bool,
+    adoptionError: (any Error)?,
+    downloadedFile: LibraryOwnedTemporaryFile?,
+    receivedData: Data,
+    response: URLResponse?,
+) -> Result<URLSessionTaskPayload, any Error> {
+    if let error {
+        return .failure(error)
+    }
+
+    guard isDownloadTask else {
+        return .success(
+            URLSessionTaskPayload(
+                body: .data(receivedData),
+                response: response,
+            ),
+        )
+    }
+
+    if let adoptionError {
+        return .failure(adoptionError)
+    }
+
+    guard let downloadedFile else {
+        return .failure(URLError(.cannotCreateFile))
+    }
+
+    return .success(
+        URLSessionTaskPayload(
+            body: .file(downloadedFile),
+            response: response,
+        ),
+    )
 }
 
 /// Separates cancellation before task start from the result of a started URLSession task.
@@ -621,6 +901,8 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
         var taskResult: Result<URLSessionTaskPayload, any Error>?
         var taskResultWaiters: [CheckedContinuation<URLSessionTaskExecutionResult, Never>] = []
         var receivedData = Data()
+        var downloadedFile: LibraryOwnedTemporaryFile?
+        var downloadFileAdoptionError: (any Error)?
         var response: URLResponse?
         var followedRedirectCount: UInt = 0
         var redirectOrdinal: UInt = 0
@@ -648,6 +930,7 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
     private let attemptNumber: UInt
     private let initialRequest: URLRequest
     private let progressReporter: NetworkProgressReporter?
+    private let isDownloadTask: Bool
 
     init(
         transportRequest: TransportRequest,
@@ -660,6 +943,7 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
         attemptNumber = transportRequest.attemptNumber
         self.initialRequest = initialRequest
         self.progressReporter = progressReporter
+        isDownloadTask = transportRequest.operation == .download
     }
 
     func recordResponse(_ response: URLResponse) {
@@ -672,6 +956,32 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
             bytesReceived: receivedByteCount,
             expectedBytesToReceive: expectedByteCount,
         )
+    }
+
+    func recordDownloadedFile(at foundationURL: URL, response: URLResponse?) {
+        do {
+            let file = try LibraryOwnedTemporaryFile.adopt(foundationURL)
+            let didStoreFile = state.withLock { storage -> Bool in
+                guard storage.taskResult == nil else {
+                    return false
+                }
+
+                storage.response = response ?? storage.response
+                storage.downloadedFile = file
+                return true
+            }
+            if didStoreFile == false {
+                file.discard()
+            }
+        } catch {
+            state.withLock { storage in
+                guard storage.taskResult == nil else {
+                    return
+                }
+
+                storage.downloadFileAdoptionError = error
+            }
+        }
     }
 
     func recordReceivedData(_ data: Data) {
@@ -693,6 +1003,14 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
         progressReporter?.updateUpload(
             bytesSent: bytesSent,
             expectedBytesToSend: expectedBytesToSend,
+        )
+    }
+
+    func recordDownloadProgress(bytesWritten: Int64, expectedBytesToWrite: Int64) {
+        let expectedBytesToReceive: Int64? = expectedBytesToWrite >= 0 ? expectedBytesToWrite : nil
+        progressReporter?.updateDownload(
+            bytesReceived: bytesWritten,
+            expectedBytesToReceive: expectedBytesToReceive,
         )
     }
 
@@ -783,12 +1101,14 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
             Result<URLSessionTaskPayload, any Error>,
             [CheckedContinuation<URLSessionTaskExecutionResult, Never>],
         ) in
-            let result: Result<URLSessionTaskPayload, any Error> =
-                if let error {
-                    .failure(error)
-                } else {
-                    .success(URLSessionTaskPayload(data: storage.receivedData, response: storage.response))
-                }
+            let result = makeURLSessionTaskResult(
+                error: error,
+                isDownloadTask: isDownloadTask,
+                adoptionError: storage.downloadFileAdoptionError,
+                downloadedFile: storage.downloadedFile,
+                receivedData: storage.receivedData,
+                response: storage.response,
+            )
             storage.taskResult = result
             let waiters = storage.taskResultWaiters
             storage.taskResultWaiters.removeAll()
@@ -831,7 +1151,7 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
 }
 
 /// Routes callbacks from the client's single foreground URLSession to the state for each task.
-final class URLSessionDelegateRouter: NSObject, URLSessionDataDelegate, Sendable {
+final class URLSessionDelegateRouter: NSObject, URLSessionDataDelegate, URLSessionDownloadDelegate, Sendable {
     private let delegates = Mutex<[Int: URLSessionTaskMetricsDelegate]>([:])
 
     func register(_ delegate: URLSessionTaskMetricsDelegate, for taskIdentifier: Int) {
@@ -860,6 +1180,30 @@ final class URLSessionDelegateRouter: NSObject, URLSessionDataDelegate, Sendable
 
     func urlSession(_: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         delegate(for: dataTask.taskIdentifier)?.recordReceivedData(data)
+    }
+
+    func urlSession(
+        _: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL,
+    ) {
+        delegate(for: downloadTask.taskIdentifier)?.recordDownloadedFile(
+            at: location,
+            response: downloadTask.response,
+        )
+    }
+
+    func urlSession(
+        _: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData _: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64,
+    ) {
+        delegate(for: downloadTask.taskIdentifier)?.recordDownloadProgress(
+            bytesWritten: totalBytesWritten,
+            expectedBytesToWrite: totalBytesExpectedToWrite,
+        )
     }
 
     func urlSession(
@@ -1571,8 +1915,9 @@ public final class NetworkClient: Sendable {
                     operation: request.operation,
                     execution: execution,
                 )
-                let transportResult = await networkTransport.executeWithMetrics(
-                    transportRequest,
+                let transportResult = await executeTransportAttempt(
+                    using: networkTransport,
+                    request: transportRequest,
                     progress: progress,
                 )
 
@@ -1597,7 +1942,7 @@ public final class NetworkClient: Sendable {
                         attempts: attempts,
                     )
 
-                case let .success(data, httpResponse, rawTaskMetrics):
+                case let .success(body: successfulBody, response: httpResponse, rawTaskMetrics):
                     attemptNumber = nextAttemptNumber
                     let normalizedMetrics = NormalizedAttemptMetrics(taskMetrics: rawTaskMetrics)
                     try Task.checkCancellation()
@@ -1607,13 +1952,14 @@ public final class NetworkClient: Sendable {
                         replayCount: authenticationReplayCount,
                         request: adaptedRequest,
                         response: httpResponse,
-                        receivedBody: .data(data),
+                        receivedBody: successfulBody.receivedResponseBody,
                         requestContext: request.context,
                         requestID: requestID,
                         attemptNumber: attemptNumber,
                         normalizedMetrics: normalizedMetrics,
                         rawTaskMetrics: rawTaskMetrics,
                     ) {
+                        successfulBody.discardFile()
                         attempts.append(replayAttempt)
                         authenticationReplayCount += 1
                         try Task.checkCancellation()
@@ -1668,6 +2014,7 @@ public final class NetworkClient: Sendable {
                             maximumServerDelay: retryPolicy.maximumRetryAfterDelay,
                             now: timingDependencies.now(),
                         )
+                        successfulBody.discardFile()
                         try await RetryTiming.sleepIfNeeded(delay, using: timingDependencies.sleep)
                         retryCount += 1
                         continue
@@ -1675,7 +2022,7 @@ public final class NetworkClient: Sendable {
 
                     let validationContext = ResponseValidationContext(
                         httpResponse: httpResponse,
-                        receivedBody: .data(data),
+                        receivedBody: successfulBody.receivedResponseBody,
                         requestID: requestID,
                         requestContext: request.context,
                     )
@@ -1705,29 +2052,34 @@ public final class NetworkClient: Sendable {
                         )
                         let retentionPolicy = request.validationErrorBodyRetentionPolicy
                             ?? clientValidationErrorBodyRetentionPolicy
+                        let retainedBody = try successfulBody.retainedBody(using: retentionPolicy)
+                        successfulBody.discardFile()
                         throw ResponseValidationError(
                             httpResponse: httpResponse,
-                            retainedBody: retentionPolicy.retain(data),
+                            retainedBody: retainedBody,
                             requestID: requestID,
                             attempts: attempts,
                             reason: reason,
                         )
                     }
 
-                    let value = try request.response.decode(
-                        data,
+                    try Task.checkCancellation()
+                    let value = try makeSuccessfulResponseValue(
+                        responseHandling: request.response,
+                        body: successfulBody,
                         response: httpResponse,
                         clientJSONDecoderConfiguration: clientJSONDecoderConfiguration,
                         endpointJSONDecoderConfiguration: request.jsonDecoderConfiguration,
                     )
                     let retentionPolicy = request.successfulResponseBodyRetentionPolicy
                         ?? clientSuccessfulResponseBodyRetentionPolicy
+                    let retainedBody = successfulBody.retainedBodyForAcceptedResponse(using: retentionPolicy)
                     return Response(
                         value: value,
                         httpResponse: httpResponse,
                         requestID: requestID,
                         attempts: attempts,
-                        retainedBody: retentionPolicy.retain(data),
+                        retainedBody: retainedBody,
                     )
 
                 case let .failure(error, rawTaskMetrics, didStartTask):
