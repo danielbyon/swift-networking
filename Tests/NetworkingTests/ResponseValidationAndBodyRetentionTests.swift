@@ -95,7 +95,8 @@ struct ResponseValidationAndBodyRetentionTests {
             transport: clientTransport,
             configuration: .init().withResponseValidationPolicy(clientAccepts),
         )
-        #expect(try await client.send(Request(endpoint: makeDataEndpoint())).value == body)
+        let clientResponse = try await client.send(Request(endpoint: makeDataEndpoint()))
+        #expect(clientResponse.value == body)
         #expect(clientCalls.value == 1)
 
         let rejectedClientCalls = CallCounter()
@@ -114,7 +115,8 @@ struct ResponseValidationAndBodyRetentionTests {
             configuration: .init().withResponseValidationPolicy(rejectingClientPolicy),
         )
         let endpoint = try makeDataEndpoint().validationPolicy(acceptingEndpointPolicy)
-        #expect(try await endpointClient.send(Request(endpoint: endpoint)).value == body)
+        let endpointResponse = try await endpointClient.send(Request(endpoint: endpoint))
+        #expect(endpointResponse.value == body)
         #expect(rejectedClientCalls.value == 0)
         #expect(acceptedEndpointCalls.value == 1)
 
@@ -143,7 +145,8 @@ struct ResponseValidationAndBodyRetentionTests {
             }),
         )
 
-        #expect(try await requestClient.send(acceptingRequest).value == body)
+        let requestResponse = try await requestClient.send(acceptingRequest)
+        #expect(requestResponse.value == body)
         #expect(lowerClientCalls.value == 0)
         #expect(lowerEndpointCalls.value == 0)
         #expect(requestCalls.value == 1)
@@ -263,6 +266,43 @@ struct ResponseValidationAndBodyRetentionTests {
             #expect(retainedBody.originalByteCount == Int64(scenario.body.count))
             #expect(retainedBody.isTruncated == scenario.truncated)
         }
+    }
+
+    @Test("File retention preserves bounded prefixes and zero or negative limits")
+    func fileBodyRetentionPolicies() throws {
+        let source = Data([0x10, 0x20, 0x30, 0x40, 0x50])
+        let fileURL = try makeRetentionTestFile(source)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let missingURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "swift-networking-missing-\(UUID().uuidString)",
+        )
+
+        let noRetainedBody = try BodyRetentionPolicy.none.retain(fileAt: missingURL)
+        #expect(noRetainedBody == nil)
+
+        let boundedValue = try BodyRetentionPolicy.upTo(2).retain(fileAt: fileURL)
+        let bounded = try #require(boundedValue)
+        #expect(bounded.data == Data([0x10, 0x20]))
+        #expect(bounded.originalByteCount == Int64(source.count))
+        #expect(bounded.isTruncated)
+
+        let zeroValue = try BodyRetentionPolicy.upTo(0).retain(fileAt: fileURL)
+        let zero = try #require(zeroValue)
+        #expect(zero.data.isEmpty)
+        #expect(zero.originalByteCount == Int64(source.count))
+        #expect(zero.isTruncated)
+
+        let negativeValue = try BodyRetentionPolicy.upTo(-4).retain(fileAt: fileURL)
+        let negative = try #require(negativeValue)
+        #expect(negative.data.isEmpty)
+        #expect(negative.originalByteCount == Int64(source.count))
+        #expect(negative.isTruncated)
+
+        let unlimitedValue = try BodyRetentionPolicy.unlimited.retain(fileAt: fileURL)
+        let unlimited = try #require(unlimitedValue)
+        #expect(unlimited.data == source)
+        #expect(unlimited.originalByteCount == Int64(source.count))
+        #expect(unlimited.isTruncated == false)
     }
 
     @Test("Retention policies replace independently at client, endpoint, and request levels")
@@ -580,6 +620,14 @@ private actor ValidationTestTransport: NetworkTransport {
 
 private func makeDataEndpoint() throws -> Endpoint<Never, Never, Data> {
     try makeEndpoint(response: ResponseDecoding<Data>.data)
+}
+
+private func makeRetentionTestFile(_ data: Data) throws -> URL {
+    let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "swift-networking-retention-\(UUID().uuidString)",
+    )
+    try data.write(to: fileURL)
+    return fileURL
 }
 
 private func makeEndpoint<Output: Sendable>(

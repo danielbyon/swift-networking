@@ -102,7 +102,56 @@ struct UploadAndFileBodyTests {
             TransportExecution.resolve(operation: .upload, body: .file(fileURL)) == .uploadFromFile(fileURL),
         )
         #expect(TransportExecution.resolve(operation: .upload, body: .none) == nil)
+        #expect(TransportExecution.resolve(operation: .download, body: .none) != nil)
+        #expect(TransportExecution.resolve(operation: .download, body: .data(payload)) != nil)
         #expect(TransportExecution.resolve(operation: .download, body: .file(fileURL)) == nil)
+    }
+
+    @Test("Tuple-only transports cannot satisfy downloads with in-memory data")
+    func tupleOnlyTransportCannotSatisfyDownload() async throws {
+        let url = try makeURL()
+        let request = TransportRequest(
+            httpRequest: HTTPRequest(method: .get, url: url),
+            body: .none,
+            operation: .download,
+            execution: .download(body: nil),
+        )
+        let transport = RecordingUploadTransport()
+        let progress = NetworkProgressCoordinator()
+
+        let result = await transport.executeDownloadWithMetrics(request, progress: progress.reporter)
+
+        guard case let .failure(_, _, didStartTask) = result else {
+            Issue.record("Expected the tuple-only transport to reject a download")
+            return
+        }
+
+        #expect(didStartTask == false)
+        #expect(await transport.recordedRequests().isEmpty)
+
+        var iterator = progress.progress.makeAsyncIterator()
+        #expect(await iterator.next()?.attemptNumber == nil)
+    }
+
+    @Test("Download endpoints return DownloadedFile without a response decoder")
+    func downloadEndpointsHaveExplicitFileResponseHandling() throws {
+        let url = try makeURL()
+        let bodyless: Endpoint<Never, Never, DownloadedFile> = .download(
+            method: .get,
+            route: .absolute(url),
+        )
+        let bodyful: Endpoint<Never, Data, DownloadedFile> = .download(
+            method: .post,
+            route: .absolute(url),
+            body: .data(contentType: "application/octet-stream"),
+        )
+        let bodylessRequest = Request(endpoint: bodyless)
+        let bodyfulRequest = Request(endpoint: bodyful, body: Data([0x01, 0x02]))
+
+        #expect(bodylessRequest.operation == .download)
+        #expect(bodyfulRequest.operation == .download)
+        #expect(bodylessRequest.response.inferredAccept == nil)
+        #expect(bodyfulRequest.response.inferredAccept == nil)
     }
 
     @Test("Endpoint and request copies preserve upload operation semantics")

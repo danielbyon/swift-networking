@@ -16,7 +16,7 @@ public struct Request<Output: Sendable>: Sendable {
     package let route: ResolvedEndpointRoute
     package let query: CapturedQuery
     package let requestQueryItems: [URLQueryItem]
-    package let response: ResponseDecoding<Output>
+    package let response: EndpointResponseHandling<Output>
     package let authenticationRequirement: AuthenticationRequirement
     package let endpointHeaders: HTTPFields
     package let requestHeaders: HTTPFields
@@ -36,7 +36,7 @@ public struct Request<Output: Sendable>: Sendable {
         route: ResolvedEndpointRoute,
         query: CapturedQuery,
         requestQueryItems: [URLQueryItem],
-        response: ResponseDecoding<Output>,
+        response: EndpointResponseHandling<Output>,
         authenticationRequirement: AuthenticationRequirement,
         endpointHeaders: HTTPFields,
         requestHeaders: HTTPFields = HTTPFields(),
