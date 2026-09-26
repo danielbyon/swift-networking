@@ -1,0 +1,85 @@
+Sources/Networking/AttemptMetrics.swift
+  s_8bb04a3bb4c453::t_597e817ede07a0 179-181
+  s_8bb04a3bb4c453::t_02adcfa231e47a 182-184
+  s_8bb04a3bb4c453::t_082f438fdbfe9e 185-188
+Sources/Networking/TransportRequest.swift
+  s_8bb04a3bb4c453::t_c94fec96bb91eb 22-24,50-57
+Sources/Networking/BodyRetentionPolicy.swift
+  s_8bb04a3bb4c453::t_66cc3dfed9ca30 37-66,68,70-77
+  s_8bb04a3bb4c453::t_a890e33bedfc96 67
+  s_8bb04a3bb4c453::t_9a09bc850e591f 69
+Tests/NetworkingTests/ResponseValidationAndBodyRetentionTests.swift
+  s_8bb04a3bb4c453::t_8b1c451290af27 271-276,278-279,282,285-288,291-294,297-300,303-307,625-626,628-630
+  s_8bb04a3bb4c453::t_f64b401db5c857 277
+  s_8bb04a3bb4c453::t_2ad11af1584ad1 280-281
+  s_8bb04a3bb4c453::t_ed6459df98d033 283-284
+  s_8bb04a3bb4c453::t_d41e64d2d56010 289-290
+  s_8bb04a3bb4c453::t_e0ac3d727b1271 295-296
+  s_8bb04a3bb4c453::t_09496a14c5616a 301-302
+  s_8bb04a3bb4c453::t_fcddc1b8b855af 627
+  s_8bb04a3bb4c453::t_e7900175492e84 631-632
+Tests/NetworkingTests/URLSessionTransportProgressTests.swift
+  s_8bb04a3bb4c453::t_5773a88e9f2b1f 56,114-133,136-233,310,312,316,319,322,325-328,331,334,348-355,373-380,396-402,404,409-410,430-433,439,462-468,474,476
+  s_8bb04a3bb4c453::t_74ea4ace40deea 53-55
+  s_8bb04a3bb4c453::t_f02d06b42ad053 111-113
+  s_8bb04a3bb4c453::t_5d2cb9eebc1ed5 134-135
+  s_8bb04a3bb4c453::t_f7dbdc6ff91e4d 469-473
+  s_8bb04a3bb4c453::t_732ff616eafad3 475
+  s_8bb04a3bb4c453::t_b7e91f65b4d2d1 477-478
+Sources/Networking/Endpoint.swift
+  s_8bb04a3bb4c453::t_bf7cce6b337304 19,23-37,50,67,513,541,572-627
+Tests/NetworkingTests/UploadAndFileBodyTests.swift
+  s_8bb04a3bb4c453::t_40240bd2784730 122
+  s_8bb04a3bb4c453::t_9672a44dbf51b5 136-148,150-152,155-156
+  s_8bb04a3bb4c453::t_16cb66d21a790b 105-106
+  s_8bb04a3bb4c453::t_d4cf66199f1524 149
+  s_8bb04a3bb4c453::t_9c1583ec7c851f 153-154
+  s_8bb04a3bb4c453::t_5654fdf31f4351 110-113,115-121,123-135
+  s_8bb04a3bb4c453::t_db4ddd97c21d6c 114
+Sources/Networking/NetworkClient.swift
+  s_8bb04a3bb4c453::t_fc18fb8bb53a53 174,177-239,248-250,252-253,255-258,282-285,495-498
+  s_8bb04a3bb4c453::t_13d0afd12e5a21 430-433,616-617,783-784
+  s_8bb04a3bb4c453::t_f431ff68b45f84 657,665,669-670,672,674
+  s_8bb04a3bb4c453::t_9744558250f163 659-660
+  s_8bb04a3bb4c453::t_7b983d28d631fe 172-173,175-176,312-319
+  s_8bb04a3bb4c453::t_a2aad7341665d7 530-593,671,673
+  s_8bb04a3bb4c453::t_128f1286278c25 501,1010,1013
+  s_8bb04a3bb4c453::t_4ef51817547924 165-169,240-247,254,259-271,273-281,336-346
+  s_8bb04a3bb4c453::t_ea6b7f6543bcd4 170,286,296,347,787,806-810,812,816-852,904-905,933,946,961-986,1009,1011-1012,1014-1015,1154,1185-1207
+  s_8bb04a3bb4c453::t_ecdc76a8126cd9 1945
+  s_8bb04a3bb4c453::t_2cedb30f40b395 1955,1962,2017,2025,2056,2059,2066,2082
+  s_8bb04a3bb4c453::t_13c8c533f9f39e 171
+  s_8bb04a3bb4c453::t_fc7df4f2b23350 251
+  s_8bb04a3bb4c453::t_e5b4cc948472a7 272
+  s_8bb04a3bb4c453::t_f0e66e49ec6bab 287-289,293-295
+  s_8bb04a3bb4c453::t_846ecb52d96eb0 297-299
+  s_8bb04a3bb4c453::t_e80b77595daa0c 785-786
+  s_8bb04a3bb4c453::t_559d4d5372b45c 788
+  s_8bb04a3bb4c453::t_60e8b95e409163 1016
+  s_8bb04a3bb4c453::t_14551058df0ed0 1208
+  s_8bb04a3bb4c453::t_9bff620b6f4fb5 2055
+  s_8bb04a3bb4c453::t_4c388464e4e82c 2067-2069
+Sources/Networking/DownloadedFile.swift
+  s_8bb04a3bb4c453::t_d28dc880c39e15 1-31,33-74,78-83
+  s_8bb04a3bb4c453::t_110a6ec76f097e 32
+  s_8bb04a3bb4c453::t_8eea0fedd8b215 75-77
+Sources/Networking/Request.swift
+  s_8bb04a3bb4c453::t_9c1583ec7c851f 19
+  s_8bb04a3bb4c453::t_9e3e02cf0433f4 39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b56cb664b5d05b74ebf0ad6bb671ed80fb8783a4",
+  "prompts": {},
+  "sessions": {
+    "s_8bb04a3bb4c453": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0dd43-1519-7783-ab10-f3ecc8266a26",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
