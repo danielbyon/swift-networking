@@ -176,7 +176,7 @@ package enum TransportExecutionError: Error, Sendable {
 
 private enum SuccessfulTransportBody: Sendable {
     case data(Data)
-    case file(LibraryOwnedTemporaryFile)
+    case file(DownloadedFileStorage)
 
     var receivedResponseBody: ReceivedResponseBody {
         switch self {
@@ -234,6 +234,38 @@ private func makeSuccessfulResponseValue<Output: Sendable>(
     default:
         body.discardFile()
         throw TransportExecutionError.responseBodyRepresentationMismatch
+    }
+}
+
+private func finalizeSuccessfulDownload(
+    body: SuccessfulTransportBody,
+    destination: DownloadDestination,
+    response: HTTPResponse,
+    context: RequestContext,
+) throws {
+    guard case let .file(file) = body else {
+        return
+    }
+
+    do {
+        let target: URL
+        let collisionPolicy: DownloadCollisionPolicy
+        switch destination {
+        case .temporary:
+            return
+        case let .file(url, policy):
+            target = url
+            collisionPolicy = policy
+        case let .resolved(policy, resolver):
+            target = try resolver(response, context)
+            collisionPolicy = policy
+        }
+
+        try Task.checkCancellation()
+        try file.finalize(to: target, collisionPolicy: collisionPolicy)
+    } catch {
+        file.discard()
+        throw error
     }
 }
 
@@ -805,7 +837,7 @@ struct RedirectLimitExceeded: Sendable {
 
 private enum URLSessionTaskBody: Sendable {
     case data(Data)
-    case file(LibraryOwnedTemporaryFile)
+    case file(DownloadedFileStorage)
 }
 
 private struct URLSessionTaskPayload: Sendable {
@@ -817,7 +849,7 @@ private func makeURLSessionTaskResult(
     error: (any Error)?,
     isDownloadTask: Bool,
     adoptionError: (any Error)?,
-    downloadedFile: LibraryOwnedTemporaryFile?,
+    downloadedFile: DownloadedFileStorage?,
     receivedData: Data,
     response: URLResponse?,
 ) -> Result<URLSessionTaskPayload, any Error> {
@@ -901,7 +933,7 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
         var taskResult: Result<URLSessionTaskPayload, any Error>?
         var taskResultWaiters: [CheckedContinuation<URLSessionTaskExecutionResult, Never>] = []
         var receivedData = Data()
-        var downloadedFile: LibraryOwnedTemporaryFile?
+        var downloadedFile: DownloadedFileStorage?
         var downloadFileAdoptionError: (any Error)?
         var response: URLResponse?
         var followedRedirectCount: UInt = 0
@@ -960,7 +992,7 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
 
     func recordDownloadedFile(at foundationURL: URL, response: URLResponse?) {
         do {
-            let file = try LibraryOwnedTemporaryFile.adopt(foundationURL)
+            let file = try DownloadedFileStorage.adopt(foundationURL)
             let didStoreFile = state.withLock { storage -> Bool in
                 guard storage.taskResult == nil else {
                     return false
@@ -2064,6 +2096,13 @@ public final class NetworkClient: Sendable {
                     }
 
                     try Task.checkCancellation()
+                    try finalizeSuccessfulDownload(
+                        body: successfulBody,
+                        destination: request.downloadDestination,
+                        response: httpResponse,
+                        context: request.context,
+                    )
+
                     let value = try makeSuccessfulResponseValue(
                         responseHandling: request.response,
                         body: successfulBody,

@@ -29,6 +29,7 @@ public struct Request<Output: Sendable>: Sendable {
     package let successfulResponseBodyRetentionPolicy: BodyRetentionPolicy?
     package let validationErrorBodyRetentionPolicy: BodyRetentionPolicy?
     package let redirectPolicy: RedirectPolicy?
+    package let downloadDestination: DownloadDestination
 
     private init(
         method: HTTPRequest.Method,
@@ -49,6 +50,7 @@ public struct Request<Output: Sendable>: Sendable {
         successfulResponseBodyRetentionPolicy: BodyRetentionPolicy? = nil,
         validationErrorBodyRetentionPolicy: BodyRetentionPolicy? = nil,
         redirectPolicy: RedirectPolicy? = nil,
+        downloadDestination: DownloadDestination = .temporary,
     ) {
         self.method = method
         self.operation = operation
@@ -68,6 +70,7 @@ public struct Request<Output: Sendable>: Sendable {
         self.successfulResponseBodyRetentionPolicy = successfulResponseBodyRetentionPolicy
         self.validationErrorBodyRetentionPolicy = validationErrorBodyRetentionPolicy
         self.redirectPolicy = redirectPolicy
+        self.downloadDestination = downloadDestination
     }
 
     /// Binds endpoint input to a bodyless endpoint and resolves its route.
@@ -212,6 +215,7 @@ public struct Request<Output: Sendable>: Sendable {
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             redirectPolicy: redirectPolicy,
+            downloadDestination: downloadDestination,
         )
     }
 
@@ -242,6 +246,7 @@ public struct Request<Output: Sendable>: Sendable {
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             redirectPolicy: redirectPolicy,
+            downloadDestination: downloadDestination,
         )
     }
 
@@ -272,6 +277,7 @@ public struct Request<Output: Sendable>: Sendable {
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             redirectPolicy: redirectPolicy,
+            downloadDestination: downloadDestination,
         )
     }
 
@@ -306,6 +312,7 @@ public struct Request<Output: Sendable>: Sendable {
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             redirectPolicy: redirectPolicy,
+            downloadDestination: downloadDestination,
         )
     }
 
@@ -330,6 +337,7 @@ public struct Request<Output: Sendable>: Sendable {
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             redirectPolicy: redirectPolicy,
+            downloadDestination: downloadDestination,
         )
     }
 
@@ -354,6 +362,7 @@ public struct Request<Output: Sendable>: Sendable {
             successfulResponseBodyRetentionPolicy: policy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             redirectPolicy: redirectPolicy,
+            downloadDestination: downloadDestination,
         )
     }
 
@@ -378,6 +387,7 @@ public struct Request<Output: Sendable>: Sendable {
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: policy,
             redirectPolicy: redirectPolicy,
+            downloadDestination: downloadDestination,
         )
     }
 
@@ -404,6 +414,7 @@ public struct Request<Output: Sendable>: Sendable {
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             redirectPolicy: redirectPolicy,
+            downloadDestination: downloadDestination,
         )
     }
 
@@ -439,6 +450,40 @@ public struct Request<Output: Sendable>: Sendable {
             successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
             validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
             redirectPolicy: policy,
+            downloadDestination: downloadDestination,
+        )
+    }
+}
+
+extension Request where Output == DownloadedFile {
+    /// Returns a copy that finalizes an accepted download at the selected destination.
+    ///
+    /// The destination is resolved only after authentication recovery, retries, and response
+    /// validation have accepted the final response. The default destination remains temporary.
+    ///
+    /// - Parameter destination: The location used to store an accepted download.
+    /// - Returns: An immutable request copy with the supplied download destination.
+    public func downloadDestination(_ destination: DownloadDestination) -> Self {
+        Self(
+            method: method,
+            operation: operation,
+            route: route,
+            query: query,
+            requestQueryItems: requestQueryItems,
+            response: response,
+            authenticationRequirement: authenticationRequirement,
+            endpointHeaders: endpointHeaders,
+            requestHeaders: requestHeaders,
+            context: context,
+            body: body,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: responseValidationPolicy,
+            retryPolicy: retryPolicy,
+            successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+            redirectPolicy: redirectPolicy,
+            downloadDestination: destination,
         )
     }
 }

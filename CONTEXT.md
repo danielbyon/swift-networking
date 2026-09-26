@@ -68,7 +68,11 @@ Ordinary retry is disabled by default.
 
 A reference-semantic ownership token for one downloaded filesystem resource.
 
-Temporary download ownership and cleanup behavior are part of its public contract.
+Temporary download ownership and cleanup behavior are part of its public contract. Reading `url`
+transfers cleanup responsibility to the caller. A successful finalization or move transfers cleanup
+responsibility away from both the old temporary location and the new caller-selected location; a
+failed move preserves the current location and its existing cleanup responsibility. `remove()` is
+idempotent when the file is absent and permanently disarms cleanup once absence is established.
 
 ### RequestContext
 
@@ -100,7 +104,7 @@ For each transport attempt:
 6. Give authentication recovery first opportunity to request replay.
 7. Evaluate ordinary retry.
 8. Validate the final response.
-9. Decode the accepted in-memory response or finalize the accepted download.
+9. Decode the accepted in-memory response or retain/finalize the accepted download.
 
 Authentication is the final outgoing request mutation stage.
 
@@ -125,7 +129,10 @@ Authentication is the final outgoing request mutation stage.
 - Response retains attempt metrics for the full multi-attempt execution.
 - Downloads are not loaded wholly into memory merely for validation or authentication.
 - Abandoned download files are cleaned up.
-- Reading DownloadedFile.url disables automatic temporary-file cleanup.
+- Reading DownloadedFile.url disables automatic temporary-file cleanup before the URL escapes.
+- Successful download finalization and moves permanently disarm cleanup for the old temporary path.
+- Caller-selected final destinations are never removed automatically.
+- Removing a download disarms cleanup after removal succeeds or the current path is already absent.
 - Observers are asynchronous, bounded, best-effort, and never awaited by networking execution.
 - Logging redacts sensitive headers and query values by default.
 - RequestContext diagnostics are opt-in per key.

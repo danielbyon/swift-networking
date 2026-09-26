@@ -5,6 +5,7 @@
 //  SPDX-License-Identifier: MIT
 //
 
+import Dispatch
 import Foundation
 import HTTPTypes
 import Synchronization
@@ -295,10 +296,581 @@ struct DownloadExecutionTests {
         #expect(await transport.executionCount() == 0)
     }
 
+    @Test("Default temporary downloads clean up unless the public URL is accessed")
+    func temporaryDownloadCleanupTransfersOnURLAccess() async throws {
+        let transport = ScriptedDownloadTransport([
+            .init(body: Data([0xd1]), statusCode: 200),
+            .init(body: Data([0xd2]), statusCode: 200),
+        ])
+        let client = try NetworkClient(transport: transport)
+
+        var automaticallyRemoved: DownloadedFile? = try await client.send(
+            Request(endpoint: makeDownloadEndpoint()),
+        )
+        .value
+        #expect(automaticallyRemoved != nil)
+        let automaticallyRemovedURL = try #require(await transport.createdFileURLs().first)
+        automaticallyRemoved = nil
+        await waitForRemoval(of: automaticallyRemovedURL)
+        #expect(FileManager.default.fileExists(atPath: automaticallyRemovedURL.path) == false)
+
+        var callerOwned: DownloadedFile? = try await client.send(
+            Request(endpoint: makeDownloadEndpoint()),
+        )
+        .value
+        let callerOwnedURL = try #require(await transport.createdFileURLs().last)
+        #expect(callerOwned?.url == callerOwnedURL)
+        callerOwned = nil
+        #expect(FileManager.default.fileExists(atPath: callerOwnedURL.path))
+        try FileManager.default.removeItem(at: callerOwnedURL)
+    }
+
+    @Test("Initial destination finalization disarms the old temporary path")
+    func finalizationDoesNotDeleteRecreatedTemporarySource() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe1]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        let destination = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("swift-networking-finalized-\(UUID().uuidString)")
+        var response: Response<DownloadedFile>? = try await client.send(
+            Request(endpoint: makeDownloadEndpoint())
+                .downloadDestination(.file(destination)),
+        )
+        let source = try #require(await transport.createdFileURLs().first)
+
+        #expect(source != destination)
+        #expect(response?.attempts.count == 1)
+        #expect(try Data(contentsOf: destination) == Data([0xe1]))
+        try Data([0xef]).write(to: source)
+        response = nil
+
+        #expect(try Data(contentsOf: source) == Data([0xef]))
+        #expect(try Data(contentsOf: destination) == Data([0xe1]))
+        try FileManager.default.removeItem(at: source)
+        try FileManager.default.removeItem(at: destination)
+    }
+
+    @Test("A successful move disarms the old temporary path")
+    func moveDoesNotDeleteRecreatedTemporarySource() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe2]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        let destination = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("swift-networking-moved-\(UUID().uuidString)")
+        var downloadedFile: DownloadedFile? = try await client.send(
+            Request(endpoint: makeDownloadEndpoint()),
+        )
+        .value
+        let source = try #require(await transport.createdFileURLs().first)
+
+        try downloadedFile?.move(to: destination)
+        try Data([0xee]).write(to: source)
+        downloadedFile = nil
+
+        #expect(try Data(contentsOf: source) == Data([0xee]))
+        #expect(try Data(contentsOf: destination) == Data([0xe2]))
+        try FileManager.default.removeItem(at: source)
+        try FileManager.default.removeItem(at: destination)
+    }
+
+    @Test("A destination with the same path but a different URL identity does not count as the source")
+    func nonFileDestinationWithMatchingPathDoesNotSilentlySucceed() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe2]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        var downloadedFile: DownloadedFile? = try await client.send(
+            Request(endpoint: makeDownloadEndpoint()),
+        )
+        .value
+        let source = try #require(await transport.createdFileURLs().first)
+        let destination = try #require(URL(string: "https://unrelated.example\(source.path)"))
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        #expect(destination.isFileURL == false)
+        #expect(source.standardizedFileURL.path == destination.standardizedFileURL.path)
+        #expect(source.standardizedFileURL != destination.standardizedFileURL)
+
+        do {
+            try downloadedFile?.move(to: destination)
+            Issue.record("Expected a move to a non-file URL to fail")
+        } catch let error as DownloadFileError {
+            switch error {
+            case let .moveFailed(failedSource, failedDestination, _):
+                #expect(failedSource == source)
+                #expect(failedDestination == destination)
+            default:
+                Issue.record("Expected moveFailed, received \(error)")
+            }
+        } catch {
+            Issue.record("Expected DownloadFileError.moveFailed, received \(error)")
+        }
+
+        #expect(FileManager.default.fileExists(atPath: source.path))
+        downloadedFile = nil
+        await waitForRemoval(of: source)
+        #expect(FileManager.default.fileExists(atPath: source.path) == false)
+    }
+
+    @Test("Successful moves can be repeated from the current file location")
+    func successfulMovesCanBeRepeated() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe2]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        let firstDestination = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("swift-networking-first-move-\(UUID().uuidString)")
+        let secondDestination = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("swift-networking-second-move-\(UUID().uuidString)")
+        let downloadedFile = try await client.send(
+            Request(endpoint: makeDownloadEndpoint()),
+        )
+        .value
+        let source = try #require(await transport.createdFileURLs().first)
+
+        try downloadedFile.move(to: firstDestination)
+        #expect(downloadedFile.url == firstDestination)
+        try downloadedFile.move(to: secondDestination)
+        #expect(downloadedFile.url == secondDestination)
+        #expect(FileManager.default.fileExists(atPath: source.path) == false)
+        #expect(FileManager.default.fileExists(atPath: firstDestination.path) == false)
+        #expect(try Data(contentsOf: secondDestination) == Data([0xe2]))
+        try FileManager.default.removeItem(at: secondDestination)
+    }
+
+    @Test("A fixed destination collision preserves the caller file")
+    func fixedDestinationCollisionPreservesCallerFile() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe3]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        let destination = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("swift-networking-finalization-collision-\(UUID().uuidString)")
+        let originalContents = Data([0xfa])
+        try originalContents.write(to: destination)
+        let request = try Request<DownloadedFile>(endpoint: makeDownloadEndpoint())
+            .downloadDestination(.file(destination))
+        let task = client.task(for: request)
+        var progressIterator = task.progress.makeAsyncIterator()
+
+        var receivedExpectedError = false
+        do {
+            _ = try await task.value
+            Issue.record("Expected finalization onto an existing file to fail")
+        } catch let error as DownloadFileError {
+            if case let .finalizationFailed(_, errorDestination, _) = error {
+                receivedExpectedError = true
+                #expect(errorDestination == destination)
+            } else {
+                Issue.record("Unexpected download file error: \(error)")
+            }
+        } catch {
+            Issue.record("Unexpected finalization error: \(error)")
+        }
+
+        #expect(receivedExpectedError)
+        while let progress = await progressIterator.next() {
+            #expect(progress.isComplete == false)
+        }
+        #expect(await transport.executionCount() == 1)
+        #expect(try Data(contentsOf: destination) == originalContents)
+        let source = try #require(await transport.createdFileURLs().first)
+        #expect(FileManager.default.fileExists(atPath: source.path) == false)
+        try FileManager.default.removeItem(at: destination)
+    }
+
+    @Test("A failed move preserves the current URL and existing destination")
+    func failedMovePreservesCurrentURLAndDestination() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe3]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        let destination = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("swift-networking-move-collision-\(UUID().uuidString)")
+        try Data([0xfa]).write(to: destination)
+        var downloadedFile: DownloadedFile? = try await client.send(
+            Request(endpoint: makeDownloadEndpoint()),
+        )
+        .value
+        let source = try #require(await transport.createdFileURLs().first)
+
+        var receivedExpectedError = false
+        do {
+            try downloadedFile?.move(to: destination)
+            Issue.record("Expected moving onto an existing file to fail")
+        } catch let error as DownloadFileError {
+            if case let .moveFailed(errorSource, errorDestination, _) = error {
+                receivedExpectedError = true
+                #expect(errorSource == source)
+                #expect(errorDestination == destination)
+            } else {
+                Issue.record("Unexpected download file error: \(error)")
+            }
+        } catch {
+            Issue.record("Unexpected error from failed move: \(error)")
+        }
+
+        #expect(receivedExpectedError)
+        #expect(downloadedFile?.url == source)
+        #expect(try Data(contentsOf: destination) == Data([0xfa]))
+        downloadedFile = nil
+        #expect(FileManager.default.fileExists(atPath: source.path))
+        try FileManager.default.removeItem(at: source)
+        try FileManager.default.removeItem(at: destination)
+    }
+
+    @Test("A failed move keeps automatic cleanup armed for an untouched temporary download")
+    func failedMoveStillCleansTemporarySourceOnRelease() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe4]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        let destination = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("swift-networking-failed-move-\(UUID().uuidString)")
+        try Data([0xfb]).write(to: destination)
+        var downloadedFile: DownloadedFile? = try await client.send(
+            Request(endpoint: makeDownloadEndpoint()),
+        )
+        .value
+        let source = try #require(await transport.createdFileURLs().first)
+
+        do {
+            try downloadedFile?.move(to: destination)
+            Issue.record("Expected moving onto an existing file to fail")
+        } catch is DownloadFileError {
+            // A failed move must leave automatic cleanup armed.
+        }
+        downloadedFile = nil
+
+        await waitForRemoval(of: source)
+        #expect(FileManager.default.fileExists(atPath: source.path) == false)
+        #expect(try Data(contentsOf: destination) == Data([0xfb]))
+        try FileManager.default.removeItem(at: destination)
+    }
+
+    @Test("Moving an absent file to its current location fails")
+    func movingAbsentFileToSameLocationFails() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe4]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        let downloadedFile = try await client.send(
+            Request(endpoint: makeDownloadEndpoint()),
+        )
+        .value
+        let source = try #require(await transport.createdFileURLs().first)
+
+        try downloadedFile.remove()
+
+        do {
+            try downloadedFile.move(to: source)
+            Issue.record("Expected moving an absent file to fail")
+        } catch let error as DownloadFileError {
+            if case let .moveFailed(errorSource, errorDestination, _) = error {
+                #expect(errorSource == source)
+                #expect(errorDestination == source)
+            } else {
+                Issue.record("Unexpected download file error: \(error)")
+            }
+        } catch {
+            Issue.record("Unexpected error moving an absent file: \(error)")
+        }
+
+        #expect(downloadedFile.ownership.url == source)
+        #expect(FileManager.default.fileExists(atPath: source.path) == false)
+    }
+
+    @Test("Removal is idempotent and deinitialization preserves a recreated path")
+    func removalDisarmsCleanupForRecreatedPath() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe5]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        var downloadedFile: DownloadedFile? = try await client.send(
+            Request(endpoint: makeDownloadEndpoint()),
+        )
+        .value
+        let source = try #require(await transport.createdFileURLs().first)
+
+        try downloadedFile?.remove()
+        #expect(FileManager.default.fileExists(atPath: source.path) == false)
+        try downloadedFile?.remove()
+        #expect(downloadedFile?.url == source)
+        try Data([0xec]).write(to: source)
+        downloadedFile = nil
+
+        #expect(try Data(contentsOf: source) == Data([0xec]))
+        try FileManager.default.removeItem(at: source)
+    }
+
+    @Test("A removal failure reports the current file URL")
+    func removeFailureReportsCurrentURL() async throws {
+        let directory = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("swift-networking-remove-failure-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let destination = directory.appendingPathComponent("download.bin")
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe5]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        let downloadedFile = try await client.send(
+            Request(endpoint: makeDownloadEndpoint()),
+        )
+        .value
+        try downloadedFile.move(to: destination)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+
+        var receivedExpectedError = false
+        do {
+            try downloadedFile.remove()
+            Issue.record("Expected removal in a read-only directory to fail")
+        } catch let error as DownloadFileError {
+            if case let .removeFailed(errorURL, _) = error {
+                receivedExpectedError = true
+                #expect(errorURL == destination)
+            } else {
+                Issue.record("Unexpected download file error: \(error)")
+            }
+        }
+
+        #expect(receivedExpectedError)
+        #expect(downloadedFile.url == destination)
+    }
+
+    @Test("Resolved destinations run once after authentication, retry, validation, and request copies")
+    func resolvedDestinationRunsAfterAcceptedFinalResponse() async throws {
+        let transport = ScriptedDownloadTransport([
+            .init(body: Data([0x11]), statusCode: 401),
+            .init(body: Data([0x22]), statusCode: 503),
+            .init(body: Data([0x33]), statusCode: 200),
+        ])
+        let resolver = DownloadDestinationResolverRecorder()
+        let destination = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("swift-networking-resolved-\(UUID().uuidString)")
+        let recovery = DownloadAuthenticationScript([.replay])
+        let endpoint = try makeDownloadEndpoint().authenticationRequirement(.required(maximumReplays: 1))
+        let client = try NetworkClient(
+            transport: transport,
+            configuration: .init().withAuthenticationProvider(
+                ScriptedDownloadAuthenticationProvider(script: recovery),
+            ),
+        )
+        let request = Request(endpoint: endpoint)
+            .downloadDestination(.resolved(collisionPolicy: .failIfExists) { response, context in
+                resolver.record(
+                    DownloadDestinationResolutionObservation(
+                        statusCode: response.status.code,
+                        contextValue: context[DownloadDestinationContextKey.self],
+                        destinationExisted: FileManager.default.fileExists(atPath: destination.path),
+                    ),
+                )
+                return destination
+            })
+            .context(DownloadDestinationContextKey.self, value: "issue-19")
+            .queryItems([URLQueryItem(name: "page", value: "1")])
+            .headers(HTTPFields())
+            .header(.accept, "application/octet-stream")
+            .validationPolicy(.successfulStatusCodes)
+            .successfulResponseBodyRetentionPolicy(.none)
+            .validationErrorBodyRetentionPolicy(.none)
+            .retryPolicy(RetryPolicy())
+            .retryPolicy { $0.maximumRetries = 1 }
+            .redirectPolicy(.follow)
+
+        let response = try await client.send(request)
+        let files = await transport.createdFileURLs()
+
+        #expect(await transport.attemptNumbers() == [1, 2, 3])
+        #expect(await transport.previousFilePresenceAtAttemptStarts() == [false, false])
+        #expect(await recovery.recordedContexts().count == 1)
+        #expect(resolver.values() == [
+            DownloadDestinationResolutionObservation(
+                statusCode: 200,
+                contextValue: "issue-19",
+                destinationExisted: false,
+            ),
+        ])
+        #expect(files.count == 3)
+        #expect(FileManager.default.fileExists(atPath: files[0].path) == false)
+        #expect(FileManager.default.fileExists(atPath: files[1].path) == false)
+        #expect(response.value.url == destination)
+        #expect(response.retainedBody == nil)
+        #expect(try Data(contentsOf: destination) == Data([0x33]))
+        try FileManager.default.removeItem(at: destination)
+    }
+
+    @Test("A rejected response never resolves or touches a caller destination")
+    func rejectedDownloadDoesNotResolveDestination() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe6]), statusCode: 200)])
+        let resolver = DownloadDestinationResolverRecorder()
+        let destination = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("swift-networking-rejected-\(UUID().uuidString)")
+        let validation = ResponseValidationPolicy.custom { _ in .reject(reason: "rejected for test") }
+        let client = try NetworkClient(transport: transport)
+        let request = try Request<DownloadedFile>(endpoint: makeDownloadEndpoint())
+            .downloadDestination(.resolved(collisionPolicy: .failIfExists) { _, _ in
+                resolver.record(
+                    DownloadDestinationResolutionObservation(
+                        statusCode: 0,
+                        contextValue: nil,
+                        destinationExisted: FileManager.default.fileExists(atPath: destination.path),
+                    ),
+                )
+                return destination
+            })
+            .validationPolicy(validation)
+        let task = client.task(for: request)
+
+        do {
+            _ = try await task.value
+            Issue.record("Expected response validation to reject the download")
+        } catch is ResponseValidationError {
+            // Rejected downloads do not resolve caller destinations.
+        }
+
+        #expect(resolver.values().isEmpty)
+        #expect(FileManager.default.fileExists(atPath: destination.path) == false)
+        let source = try #require(await transport.createdFileURLs().first)
+        #expect(FileManager.default.fileExists(atPath: source.path) == false)
+    }
+
+    @Test("Destination resolver errors propagate unchanged and clean the temporary file")
+    func resolverErrorPropagatesUnchangedAndCleansTemporaryFile() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe7]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        let request = try Request<DownloadedFile>(endpoint: makeDownloadEndpoint())
+            .downloadDestination(.resolved(collisionPolicy: .failIfExists) { _, _ in
+                throw DownloadResolverTestError.expected
+            })
+        let task = client.task(for: request)
+
+        do {
+            _ = try await task.value
+            Issue.record("Expected the destination resolver to fail")
+        } catch let error as DownloadResolverTestError {
+            #expect(error == .expected)
+        } catch {
+            Issue.record("Unexpected resolver error: \(error)")
+        }
+
+        let source = try #require(await transport.createdFileURLs().first)
+        #expect(FileManager.default.fileExists(atPath: source.path) == false)
+    }
+
+    @Test("Cancellation during destination resolution discards the temporary file")
+    func cancellationDuringDestinationResolutionDiscardsTemporaryFile() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe7]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        let destination = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("swift-networking-cancelled-resolution-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: destination) }
+        let resolverGate = BlockingDownloadDestinationResolver(destination: destination)
+        let request = try Request<DownloadedFile>(endpoint: makeDownloadEndpoint())
+            .downloadDestination(.resolved(collisionPolicy: .failIfExists) { _, _ in
+                resolverGate.resolve()
+            })
+        let task = client.task(for: request)
+
+        await resolverGate.waitUntilEntered()
+        let source = try #require(await transport.createdFileURLs().first)
+        task.cancel()
+        resolverGate.release()
+
+        do {
+            _ = try await task.value
+            Issue.record("Expected cancellation during destination resolution")
+        } catch is CancellationError {
+            // Cancellation after resolution must prevent finalization.
+        }
+
+        await waitForRemoval(of: source)
+        #expect(FileManager.default.fileExists(atPath: source.path) == false)
+        #expect(FileManager.default.fileExists(atPath: destination.path) == false)
+    }
+
+    @Test("Replacing an existing destination succeeds and preserves the downloaded contents")
+    func replaceExistingReplacesCallerDestination() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe8]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        let destination = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("swift-networking-replaced-\(UUID().uuidString)")
+        try Data([0xfc]).write(to: destination)
+
+        var response: Response<DownloadedFile>? = try await client.send(
+            Request(endpoint: makeDownloadEndpoint())
+                .downloadDestination(.file(destination, collisionPolicy: .replaceExisting)),
+        )
+
+        #expect(response?.attempts.count == 1)
+        #expect(try Data(contentsOf: destination) == Data([0xe8]))
+        response = nil
+        #expect(try Data(contentsOf: destination) == Data([0xe8]))
+        try FileManager.default.removeItem(at: destination)
+    }
+
+    @Test("DownloadedFile moves can replace an existing destination")
+    func moveCanReplaceExistingDestination() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xea]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        let destination = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("swift-networking-move-replaced-\(UUID().uuidString)")
+        try Data([0xfe]).write(to: destination)
+        var downloadedFile: DownloadedFile? = try await client.send(
+            Request(endpoint: makeDownloadEndpoint()),
+        )
+        .value
+        let source = try #require(await transport.createdFileURLs().first)
+
+        try downloadedFile?.move(to: destination, collisionPolicy: .replaceExisting)
+
+        #expect(downloadedFile?.url == destination)
+        #expect(FileManager.default.fileExists(atPath: source.path) == false)
+        #expect(try Data(contentsOf: destination) == Data([0xea]))
+        downloadedFile = nil
+        #expect(try Data(contentsOf: destination) == Data([0xea]))
+        try FileManager.default.removeItem(at: destination)
+    }
+
+    @Test("A failed replacement preserves an existing caller file")
+    func failedReplacementPreservesExistingCallerFile() async throws {
+        let directory = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("swift-networking-read-only-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let destination = directory.appendingPathComponent("existing.bin")
+        let originalContents = Data([0xfd, 0xfd])
+        try originalContents.write(to: destination)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe9]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        var receivedExpectedError = false
+        do {
+            _ = try await client.send(
+                Request(endpoint: makeDownloadEndpoint())
+                    .downloadDestination(.file(destination, collisionPolicy: .replaceExisting)),
+            )
+            Issue.record("Expected replacement in a read-only directory to fail")
+        } catch let error as DownloadFileError {
+            if case let .finalizationFailed(_, errorDestination, _) = error {
+                receivedExpectedError = true
+                #expect(errorDestination == destination)
+            } else {
+                Issue.record("Unexpected download file error: \(error)")
+            }
+        } catch {
+            Issue.record("Unexpected replacement error: \(error)")
+        }
+
+        #expect(receivedExpectedError)
+        #expect(try Data(contentsOf: destination) == originalContents)
+        let source = try #require(await transport.createdFileURLs().first)
+        #expect(FileManager.default.fileExists(atPath: source.path) == false)
+    }
+
     @Test("An abandoned ownership token automatically removes its library temporary file")
     func ownershipTokenCleansUpWhenReleased() throws {
         let foundationURL = try makeFoundationTemporaryFile(contents: Data([0xb1, 0xb2]))
-        var ownership: LibraryOwnedTemporaryFile? = try LibraryOwnedTemporaryFile.adopt(foundationURL)
+        var ownership: DownloadedFileStorage? = try DownloadedFileStorage.adopt(foundationURL)
         let ownedURL = try #require(ownership?.url)
 
         #expect(FileManager.default.fileExists(atPath: ownedURL.path))
@@ -350,7 +922,7 @@ private actor ScriptedDownloadTransport: NetworkTransport {
         progress.startAttempt(attemptNumber: request.attemptNumber, expectedBytesToSend: nil)
         do {
             let foundationURL = try makeFoundationTemporaryFile(contents: plan.body)
-            let ownership = try LibraryOwnedTemporaryFile.adopt(foundationURL)
+            let ownership = try DownloadedFileStorage.adopt(foundationURL)
             files.append(ownership.url)
             progress.updateDownload(
                 bytesReceived: Int64(plan.body.count),
@@ -477,6 +1049,81 @@ private final class ValidationFileRecorder: Sendable {
 private struct RetrySleepObservation: Sendable, Equatable {
     let delay: Duration
     let previousWasRemoved: Bool
+}
+
+private struct DownloadDestinationResolutionObservation: Sendable, Equatable {
+    let statusCode: Int
+    let contextValue: String?
+    let destinationExisted: Bool
+}
+
+private final class DownloadDestinationResolverRecorder: Sendable {
+    private let storage = Mutex<[DownloadDestinationResolutionObservation]>([])
+
+    func record(_ observation: DownloadDestinationResolutionObservation) {
+        storage.withLock { $0.append(observation) }
+    }
+
+    func values() -> [DownloadDestinationResolutionObservation] {
+        storage.withLock { $0 }
+    }
+}
+
+private final class BlockingDownloadDestinationResolver: Sendable {
+    private struct State: Sendable {
+        var hasEntered = false
+        var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    }
+
+    private let destination: URL
+    private let state = Mutex(State())
+    private let releaseSignal = DispatchSemaphore(value: 0)
+
+    init(destination: URL) {
+        self.destination = destination
+    }
+
+    func resolve() -> URL {
+        let waiters = state.withLock { state in
+            state.hasEntered = true
+            let waiters = state.entryWaiters
+            state.entryWaiters.removeAll()
+            return waiters
+        }
+        for waiter in waiters {
+            waiter.resume()
+        }
+        releaseSignal.wait()
+        return destination
+    }
+
+    func waitUntilEntered() async {
+        await withCheckedContinuation { continuation in
+            let hasEntered = state.withLock { state in
+                guard !state.hasEntered else {
+                    return true
+                }
+
+                state.entryWaiters.append(continuation)
+                return false
+            }
+            if hasEntered {
+                continuation.resume()
+            }
+        }
+    }
+
+    func release() {
+        releaseSignal.signal()
+    }
+}
+
+private enum DownloadDestinationContextKey: RequestContextKey {
+    typealias Value = String
+}
+
+private enum DownloadResolverTestError: Error, Sendable, Equatable {
+    case expected
 }
 
 private enum DownloadExecutionTestError: Error, Sendable, Equatable {
