@@ -23,7 +23,7 @@ package enum EndpointOperation: Sendable, Equatable {
 /// Describes whether a response is decoded from bytes or transferred as an owned download file.
 package enum EndpointResponseHandling<Output: Sendable>: Sendable {
     case decode(ResponseDecoding<Output>)
-    case download(@Sendable (LibraryOwnedTemporaryFile) -> Output)
+    case download(@Sendable (DownloadedFileStorage) -> Output)
 
     package var inferredAccept: String? {
         guard case let .decode(decoding) = self else {

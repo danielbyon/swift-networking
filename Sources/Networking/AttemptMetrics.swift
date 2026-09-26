@@ -178,7 +178,7 @@ package enum NetworkTransportResult: Sendable {
 }
 
 package enum NetworkTransportDownloadResult: Sendable {
-    case success(file: LibraryOwnedTemporaryFile, response: HTTPResponse, rawTaskMetrics: URLSessionTaskMetrics?)
+    case success(file: DownloadedFileStorage, response: HTTPResponse, rawTaskMetrics: URLSessionTaskMetrics?)
     case failure(error: any Error, rawTaskMetrics: URLSessionTaskMetrics?, didStartTask: Bool)
     case redirectLimitExceeded(
         maximumRedirects: UInt,
