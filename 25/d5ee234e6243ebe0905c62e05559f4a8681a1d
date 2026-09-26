@@ -1,0 +1,57 @@
+Sources/Networking/Endpoint.swift
+  s_b6250a66594c83::t_0949de26ab77bd 105-111
+  s_b6250a66594c83::t_6e72accb622683 52,498,526
+  s_b6250a66594c83::t_bce985b8502419 11,13,15-16,18-19,34,101-104
+  s_b6250a66594c83::t_88a764f92e5b07 12,14,17,20-22,35,68,87-100,201,232,258,279,300,323,346,378,527-557
+Tests/NetworkingTests/RequestAdapterTests.swift
+  s_b6250a66594c83::t_a4057a2c348a43 97,120,122,125-126
+  s_b6250a66594c83::t_6294a03c6476ee 117-119
+Tests/NetworkingTests/UploadAndFileBodyTests.swift
+  s_b6250a66594c83::t_e901adb1b8623e 87
+  s_b6250a66594c83::t_931d8dbc401c90 55-58,60,258
+  s_b6250a66594c83::t_79f4d55b8e1a8a 64-69,71,73-81,83-85
+  s_b6250a66594c83::t_db2ecb1225e96c 355-356,374-376,423-424
+  s_b6250a66594c83::t_59d29affb50930 18-19,21,41-42,44,110,113,330-331,333,432
+  s_b6250a66594c83::t_1daecec1e66351 171-189
+  s_b6250a66594c83::t_f649a1216af587 1-17,20,22-40,43,45-54,61-63,86,88-109,111-112,114-148,153-170,190-191,195-257,259-285,289-329,332,334-339,343-344,349-354,357-373,377-422,425-431,433-447
+  s_b6250a66594c83::t_631d42650c5ef1 70,72,82,345-348
+  s_b6250a66594c83::t_f577472c41e6ff 59,149-152,192-194,286-288,340-342
+Sources/Networking/TransportRequest.swift
+  s_b6250a66594c83::t_bce985b8502419 11,13,15-16,18-19,22,55,57
+  s_b6250a66594c83::t_48d9fffe4e3d08 12,14,17,20-21,23-51,56,58,71-72,76-77
+Tests/NetworkingTests/RedirectPolicyTests.swift
+  s_b6250a66594c83::t_145c3b786d4aa8 206-207,209-210,218-222,226,231,270
+Sources/Networking/Request.swift
+  s_b6250a66594c83::t_854199a0dee626 15,35,54,81,104,137,166,198,228,258,292,316,340,364,390,425
+  s_b6250a66594c83::t_bce985b8502419 14
+Sources/Networking/RequestConstructionError.swift
+  s_b6250a66594c83::t_9c44a37734f342 30-32
+Sources/Networking/NetworkClient.swift
+  s_b6250a66594c83::t_0c948959e21078 243-245,253-257,260,267-269,271,279-282,325-330,338-345,1132-1141,1143-1146,1176-1177
+  s_b6250a66594c83::t_bce985b8502419 266
+  s_b6250a66594c83::t_8dd2d41f3e8bcb 236,238
+  s_b6250a66594c83::t_1772f4278ace76 258-259
+  s_b6250a66594c83::t_4fb53746e0cfeb 270,272-278
+  s_b6250a66594c83::t_998767d6971b56 1142
+Sources/Networking/BodyEncoding.swift
+  s_b6250a66594c83::t_9c44a37734f342 77,82-84,86
+Tests/NetworkingTests/BodyEncodingAndResponseDecodingTests.swift
+  s_b6250a66594c83::t_46b1daeb639750 435-436,440-443,459,463,465,482-488,491-492
+  s_b6250a66594c83::t_60cf1c65d14882 437-439,490
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "25d5ee234e6243ebe0905c62e05559f4a8681a1d",
+  "prompts": {},
+  "sessions": {
+    "s_b6250a66594c83": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0dadb-db22-70b1-abab-f115276b8fd2",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
