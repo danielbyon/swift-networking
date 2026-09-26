@@ -1,0 +1,22 @@
+Sources/Networking/DownloadedFile.swift
+  s_6c1699824c7586::t_433a73217b1632 17-22,25,31,50-52,70-73,77,83,91,96-97,100,119-122,126,132
+Tests/NetworkingTests/DownloadExecutionTests.swift
+  s_6c1699824c7586::t_4a5496e5ab6a35 597-684
+  s_6c1699824c7586::t_8247a8bdf6c502 718-720
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3dce09e55fc912510ab790bb952f72c521440251",
+  "prompts": {},
+  "sessions": {
+    "s_6c1699824c7586": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0df05-4122-7de0-993b-862952a319b0",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
