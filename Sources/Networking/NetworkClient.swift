@@ -158,6 +158,11 @@ private func authenticationReplayAttempt(
 package protocol NetworkTransport: Sendable {
     func execute(_ request: TransportRequest) async throws -> (Data, HTTPResponse)
     func executeWithMetrics(_ request: TransportRequest) async -> NetworkTransportResult
+    /// Executes one attempt and publishes byte-transfer updates for that logical task.
+    func executeWithMetrics(
+        _ request: TransportRequest,
+        progress: NetworkProgressReporter,
+    ) async -> NetworkTransportResult
 }
 
 extension NetworkTransport {
@@ -172,6 +177,29 @@ extension NetworkTransport {
         } catch {
             return .failure(error: error, rawTaskMetrics: nil, didStartTask: true)
         }
+    }
+
+    /// Preserves existing test transports while reporting which scripted attempts actually started.
+    package func executeWithMetrics(
+        _ request: TransportRequest,
+        progress: NetworkProgressReporter,
+    ) async -> NetworkTransportResult {
+        let result = await executeWithMetrics(request)
+        let didStartTask: Bool =
+            switch result {
+            case .success,
+                 .redirectLimitExceeded:
+                true
+            case let .failure(_, _, didStart):
+                didStart
+            }
+        if didStartTask {
+            progress.startAttempt(
+                attemptNumber: request.attemptNumber,
+                expectedBytesToSend: expectedRequestBodyByteCount(request.execution),
+            )
+        }
+        return result
     }
 }
 
@@ -286,18 +314,32 @@ private func durationTimeInterval(_ duration: Duration) -> TimeInterval {
     return Double(components.seconds) + Double(components.attoseconds) / 1_000_000_000_000_000_000
 }
 
-private struct URLSessionTransport: NetworkTransport {
+package struct URLSessionTransport: NetworkTransport {
     private let session: URLSession
+    private let delegateRouter: URLSessionDelegateRouter
     private let assumesHTTP3Capable: Bool?
 
-    init(configuration: NetworkClient.Configuration) {
+    /// Creates the one foreground session shared by every attempt executed by this transport.
+    ///
+    /// - Parameters:
+    ///   - configuration: The client policies used to configure a production foreground session.
+    ///   - sessionConfiguration: An optional package-only session configuration for deterministic tests.
+    package init(
+        configuration: NetworkClient.Configuration,
+        sessionConfiguration: URLSessionConfiguration? = nil,
+    ) {
+        let router = URLSessionDelegateRouter()
+        delegateRouter = router
         session = URLSession(
-            configuration: makeForegroundURLSessionConfiguration(configuration: configuration),
+            configuration: sessionConfiguration
+                ?? makeForegroundURLSessionConfiguration(configuration: configuration),
+            delegate: router,
+            delegateQueue: nil,
         )
         assumesHTTP3Capable = configuration.assumesHTTP3Capable
     }
 
-    func execute(_ request: TransportRequest) async throws -> (Data, HTTPResponse) {
+    package func execute(_ request: TransportRequest) async throws -> (Data, HTTPResponse) {
         switch await executeWithMetrics(request) {
         case let .success(data, response, _):
             (data, response)
@@ -321,7 +363,14 @@ private struct URLSessionTransport: NetworkTransport {
         }
     }
 
-    func executeWithMetrics(_ request: TransportRequest) async -> NetworkTransportResult {
+    package func executeWithMetrics(_ request: TransportRequest) async -> NetworkTransportResult {
+        await executeWithMetrics(request, progress: NetworkProgressCoordinator().reporter)
+    }
+
+    package func executeWithMetrics(
+        _ request: TransportRequest,
+        progress: NetworkProgressReporter,
+    ) async -> NetworkTransportResult {
         guard let execution = request.execution,
               let urlRequest = makeURLRequest(
                   request,
@@ -331,28 +380,45 @@ private struct URLSessionTransport: NetworkTransport {
             return .failure(error: URLError(.badURL), rawTaskMetrics: nil, didStartTask: false)
         }
 
-        let delegate = URLSessionTaskMetricsDelegate(transportRequest: request, initialRequest: urlRequest)
-        let data: Data
-        let urlResponse: URLResponse
-        do {
+        let delegate = URLSessionTaskMetricsDelegate(
+            transportRequest: request,
+            initialRequest: urlRequest,
+            progressReporter: progress,
+        )
+        let task: URLSessionTask =
             switch execution {
             case .data:
-                (data, urlResponse) = try await session.data(for: urlRequest, delegate: delegate)
+                session.dataTask(with: urlRequest)
             case let .uploadFromData(body):
-                (data, urlResponse) = try await session.upload(for: urlRequest, from: body, delegate: delegate)
+                session.uploadTask(with: urlRequest, from: body)
             case let .uploadFromFile(fileURL):
-                (data, urlResponse) = try await session.upload(for: urlRequest, fromFile: fileURL, delegate: delegate)
+                session.uploadTask(with: urlRequest, fromFile: fileURL)
             }
-        } catch {
-            let rawTaskMetrics = await delegate.taskMetricsAfterCompletion()
-            if let limit = delegate.redirectLimitExceeded() {
-                return .redirectLimitExceeded(
-                    maximumRedirects: limit.maximumRedirects,
-                    lastResponse: limit.lastResponse,
-                    rawTaskMetrics: rawTaskMetrics,
+
+        let didStartTask = Mutex(false)
+        let taskResult = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard Task.isCancelled == false else {
+                    let cancellation: Result<URLSessionTaskPayload, any Error> = .failure(CancellationError())
+                    continuation.resume(returning: cancellation)
+                    return
+                }
+
+                delegateRouter.register(delegate, for: task.taskIdentifier)
+                delegate.waitForTaskCompletion(continuation)
+                didStartTask.withLock { $0 = true }
+                progress.startAttempt(
+                    attemptNumber: request.attemptNumber,
+                    expectedBytesToSend: expectedRequestBodyByteCount(execution),
                 )
+                task.resume()
             }
-            return .failure(error: error, rawTaskMetrics: rawTaskMetrics, didStartTask: true)
+        } onCancel: {
+            task.cancel()
+        }
+
+        guard didStartTask.withLock({ $0 }) else {
+            return .failure(error: CancellationError(), rawTaskMetrics: nil, didStartTask: false)
         }
 
         let rawTaskMetrics = await delegate.taskMetricsAfterCompletion()
@@ -363,6 +429,17 @@ private struct URLSessionTransport: NetworkTransport {
                 rawTaskMetrics: rawTaskMetrics,
             )
         }
+
+        let data: Data
+        let urlResponse: URLResponse?
+        switch taskResult {
+        case let .success(payload):
+            data = payload.data
+            urlResponse = payload.response
+        case let .failure(error):
+            return .failure(error: error, rawTaskMetrics: rawTaskMetrics, didStartTask: true)
+        }
+
         guard let response = (urlResponse as? HTTPURLResponse)?.httpResponse else {
             return .failure(error: URLError(.badServerResponse), rawTaskMetrics: rawTaskMetrics, didStartTask: true)
         }
@@ -371,9 +448,37 @@ private struct URLSessionTransport: NetworkTransport {
     }
 }
 
+private func expectedRequestBodyByteCount(_ execution: TransportExecution?) -> Int64? {
+    guard let execution else {
+        return nil
+    }
+
+    switch execution {
+    case let .data(body):
+        guard let body else {
+            return 0
+        }
+
+        return Int64(exactly: body.count)
+    case let .uploadFromData(body):
+        return Int64(exactly: body.count)
+    case let .uploadFromFile(fileURL):
+        guard let fileSize = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+            return nil
+        }
+
+        return Int64(exactly: fileSize)
+    }
+}
+
 struct RedirectLimitExceeded: Sendable {
     let maximumRedirects: UInt
     let lastResponse: HTTPResponse?
+}
+
+private struct URLSessionTaskPayload: Sendable {
+    let data: Data
+    let response: URLResponse?
 }
 
 /// Tracks task completion separately from completion of metrics collection.
@@ -415,6 +520,10 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
     private struct State: Sendable {
         var metricsCollection = TaskMetricsCollectionState<URLSessionTaskMetrics>()
         var waiters: [CheckedContinuation<URLSessionTaskMetrics?, Never>] = []
+        var taskResult: Result<URLSessionTaskPayload, any Error>?
+        var taskResultWaiters: [CheckedContinuation<Result<URLSessionTaskPayload, any Error>, Never>] = []
+        var receivedData = Data()
+        var response: URLResponse?
         var followedRedirectCount: UInt = 0
         var redirectOrdinal: UInt = 0
         var redirectLimitExceeded: RedirectLimitExceeded?
@@ -440,13 +549,72 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
     private let requestContext: RequestContext
     private let attemptNumber: UInt
     private let initialRequest: URLRequest
+    private let progressReporter: NetworkProgressReporter?
 
-    init(transportRequest: TransportRequest, initialRequest: URLRequest) {
+    init(
+        transportRequest: TransportRequest,
+        initialRequest: URLRequest,
+        progressReporter: NetworkProgressReporter? = nil,
+    ) {
         redirectPolicy = transportRequest.redirectPolicy
         requestID = transportRequest.requestID
         requestContext = transportRequest.requestContext
         attemptNumber = transportRequest.attemptNumber
         self.initialRequest = initialRequest
+        self.progressReporter = progressReporter
+    }
+
+    func recordResponse(_ response: URLResponse) {
+        let receivedByteCount = state.withLock { storage -> Int64 in
+            storage.response = response
+            return Int64(clamping: storage.receivedData.count)
+        }
+        let expectedByteCount = response.expectedContentLength >= 0 ? response.expectedContentLength : nil
+        progressReporter?.updateDownload(
+            bytesReceived: receivedByteCount,
+            expectedBytesToReceive: expectedByteCount,
+        )
+    }
+
+    func recordReceivedData(_ data: Data) {
+        let (receivedByteCount, expectedByteCount) = state.withLock { storage -> (Int64, Int64?) in
+            storage.receivedData.append(data)
+            let expectedByteCount = storage.response?.expectedContentLength
+            return (
+                Int64(clamping: storage.receivedData.count),
+                expectedByteCount.flatMap { $0 >= 0 ? $0 : nil },
+            )
+        }
+        progressReporter?.updateDownload(
+            bytesReceived: receivedByteCount,
+            expectedBytesToReceive: expectedByteCount,
+        )
+    }
+
+    func recordUploadProgress(bytesSent: Int64, expectedBytesToSend: Int64) {
+        progressReporter?.updateUpload(
+            bytesSent: bytesSent,
+            expectedBytesToSend: expectedBytesToSend,
+        )
+    }
+
+    fileprivate func waitForTaskCompletion(
+        _ continuation: CheckedContinuation<Result<URLSessionTaskPayload, any Error>, Never>,
+    ) {
+        let taskResult = state.withLock { storage -> Result<URLSessionTaskPayload, any Error>? in
+            if let taskResult = storage.taskResult {
+                return taskResult
+            }
+            storage.taskResultWaiters.append(continuation)
+            return nil
+        }
+        if let taskResult {
+            continuation.resume(returning: taskResult)
+        }
+    }
+
+    func isReadyForRemoval() -> Bool {
+        state.withLock { $0.metricsCollection.result != nil }
     }
 
     func urlSession(
@@ -511,9 +679,27 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
     func urlSession(
         _: URLSession,
         task _: URLSessionTask,
-        didCompleteWithError _: (any Error)?,
+        didCompleteWithError error: (any Error)?,
     ) {
-        state.withLock { $0.metricsCollection.taskDidComplete() }
+        let (taskResult, taskWaiters) = state.withLock { storage -> (
+            Result<URLSessionTaskPayload, any Error>,
+            [CheckedContinuation<Result<URLSessionTaskPayload, any Error>, Never>],
+        ) in
+            let result: Result<URLSessionTaskPayload, any Error> =
+                if let error {
+                    .failure(error)
+                } else {
+                    .success(URLSessionTaskPayload(data: storage.receivedData, response: storage.response))
+                }
+            storage.taskResult = result
+            let waiters = storage.taskResultWaiters
+            storage.taskResultWaiters.removeAll()
+            storage.metricsCollection.taskDidComplete()
+            return (result, waiters)
+        }
+        for waiter in taskWaiters {
+            waiter.resume(returning: taskResult)
+        }
         resumeReadyWaiters()
     }
 
@@ -542,6 +728,107 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
 
         for waiter in waiters {
             waiter.resume(returning: readyMetrics)
+        }
+    }
+}
+
+/// Routes callbacks from the client's single foreground URLSession to the state for each task.
+final class URLSessionDelegateRouter: NSObject, URLSessionDataDelegate, Sendable {
+    private let delegates = Mutex<[Int: URLSessionTaskMetricsDelegate]>([:])
+
+    func register(_ delegate: URLSessionTaskMetricsDelegate, for taskIdentifier: Int) {
+        delegates.withLock { $0[taskIdentifier] = delegate }
+    }
+
+    func urlSession(
+        _: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: (URLSession.ResponseDisposition) -> Void,
+    ) {
+        delegate(for: dataTask.taskIdentifier)?.recordResponse(response)
+        completionHandler(.allow)
+    }
+
+    func urlSession(_: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        delegate(for: dataTask.taskIdentifier)?.recordReceivedData(data)
+    }
+
+    func urlSession(
+        _: URLSession,
+        task: URLSessionTask,
+        didSendBodyData _: Int64,
+        totalBytesSent: Int64,
+        totalBytesExpectedToSend: Int64,
+    ) {
+        delegate(for: task.taskIdentifier)?.recordUploadProgress(
+            bytesSent: totalBytesSent,
+            expectedBytesToSend: totalBytesExpectedToSend,
+        )
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void,
+    ) {
+        guard let delegate = delegate(for: task.taskIdentifier) else {
+            completionHandler(newRequest)
+            return
+        }
+
+        delegate.urlSession(
+            session,
+            task: task,
+            willPerformHTTPRedirection: response,
+            newRequest: newRequest,
+            completionHandler: completionHandler,
+        )
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didFinishCollecting metrics: URLSessionTaskMetrics,
+    ) {
+        guard let delegate = delegate(for: task.taskIdentifier) else {
+            return
+        }
+
+        delegate.urlSession(session, task: task, didFinishCollecting: metrics)
+        removeIfReady(delegate, taskIdentifier: task.taskIdentifier)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: (any Error)?,
+    ) {
+        guard let delegate = delegate(for: task.taskIdentifier) else {
+            return
+        }
+
+        delegate.urlSession(session, task: task, didCompleteWithError: error)
+        removeIfReady(delegate, taskIdentifier: task.taskIdentifier)
+    }
+
+    private func delegate(for taskIdentifier: Int) -> URLSessionTaskMetricsDelegate? {
+        delegates.withLock { $0[taskIdentifier] }
+    }
+
+    private func removeIfReady(_ delegate: URLSessionTaskMetricsDelegate, taskIdentifier: Int) {
+        guard delegate.isReadyForRemoval() else {
+            return
+        }
+
+        delegates.withLock { storage in
+            guard storage[taskIdentifier] === delegate else {
+                return
+            }
+
+            storage.removeValue(forKey: taskIdentifier)
         }
     }
 }
@@ -1101,7 +1388,7 @@ public final class NetworkClient: Sendable {
                 .relative
             }
 
-        return NetworkTask(requestID: requestID) {
+        return NetworkTask(requestID: requestID) { progress in
             let routeURL = try Self.preflightURL(for: request.route, baseURL: baseURL, requestID: requestID)
             let url = try QueryComposer.compose(
                 url: routeURL,
@@ -1176,7 +1463,10 @@ public final class NetworkClient: Sendable {
                     operation: request.operation,
                     execution: execution,
                 )
-                let transportResult = await networkTransport.executeWithMetrics(transportRequest)
+                let transportResult = await networkTransport.executeWithMetrics(
+                    transportRequest,
+                    progress: progress,
+                )
 
                 switch transportResult {
                 case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics):
