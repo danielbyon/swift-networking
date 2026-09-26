@@ -104,7 +104,8 @@ package final class DownloadedFileStorage: Sendable {
         try state.withLock { current in
             let source = current.currentURL
             do {
-                if Self.isSameFileLocation(source, destination) {
+                if Self.isSameFileLocation(source, destination),
+                   FileManager.default.fileExists(atPath: source.path) {
                     current.currentURL = destination
                     current.cleanupURL = nil
                     return

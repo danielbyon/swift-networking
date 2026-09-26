@@ -5,6 +5,7 @@
 //  SPDX-License-Identifier: MIT
 //
 
+import Dispatch
 import Foundation
 import HTTPTypes
 import Synchronization
@@ -542,6 +543,36 @@ struct DownloadExecutionTests {
         try FileManager.default.removeItem(at: destination)
     }
 
+    @Test("Moving an absent file to its current location fails")
+    func movingAbsentFileToSameLocationFails() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe4]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        let downloadedFile = try await client.send(
+            Request(endpoint: makeDownloadEndpoint()),
+        )
+        .value
+        let source = try #require(await transport.createdFileURLs().first)
+
+        try downloadedFile.remove()
+
+        do {
+            try downloadedFile.move(to: source)
+            Issue.record("Expected moving an absent file to fail")
+        } catch let error as DownloadFileError {
+            if case let .moveFailed(errorSource, errorDestination, _) = error {
+                #expect(errorSource == source)
+                #expect(errorDestination == source)
+            } else {
+                Issue.record("Unexpected download file error: \(error)")
+            }
+        } catch {
+            Issue.record("Unexpected error moving an absent file: \(error)")
+        }
+
+        #expect(downloadedFile.ownership.url == source)
+        #expect(FileManager.default.fileExists(atPath: source.path) == false)
+    }
+
     @Test("Removal is idempotent and deinitialization preserves a recreated path")
     func removalDisarmsCleanupForRecreatedPath() async throws {
         let transport = ScriptedDownloadTransport([.init(body: Data([0xe5]), statusCode: 200)])
@@ -718,6 +749,38 @@ struct DownloadExecutionTests {
 
         let source = try #require(await transport.createdFileURLs().first)
         #expect(FileManager.default.fileExists(atPath: source.path) == false)
+    }
+
+    @Test("Cancellation during destination resolution discards the temporary file")
+    func cancellationDuringDestinationResolutionDiscardsTemporaryFile() async throws {
+        let transport = ScriptedDownloadTransport([.init(body: Data([0xe7]), statusCode: 200)])
+        let client = try NetworkClient(transport: transport)
+        let destination = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("swift-networking-cancelled-resolution-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: destination) }
+        let resolverGate = BlockingDownloadDestinationResolver(destination: destination)
+        let request = try Request<DownloadedFile>(endpoint: makeDownloadEndpoint())
+            .downloadDestination(.resolved(collisionPolicy: .failIfExists) { _, _ in
+                resolverGate.resolve()
+            })
+        let task = client.task(for: request)
+
+        await resolverGate.waitUntilEntered()
+        let source = try #require(await transport.createdFileURLs().first)
+        task.cancel()
+        resolverGate.release()
+
+        do {
+            _ = try await task.value
+            Issue.record("Expected cancellation during destination resolution")
+        } catch is CancellationError {
+            // Cancellation after resolution must prevent finalization.
+        }
+
+        await waitForRemoval(of: source)
+        #expect(FileManager.default.fileExists(atPath: source.path) == false)
+        #expect(FileManager.default.fileExists(atPath: destination.path) == false)
     }
 
     @Test("Replacing an existing destination succeeds and preserves the downloaded contents")
@@ -1003,6 +1066,55 @@ private final class DownloadDestinationResolverRecorder: Sendable {
 
     func values() -> [DownloadDestinationResolutionObservation] {
         storage.withLock { $0 }
+    }
+}
+
+private final class BlockingDownloadDestinationResolver: Sendable {
+    private struct State: Sendable {
+        var hasEntered = false
+        var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    }
+
+    private let destination: URL
+    private let state = Mutex(State())
+    private let releaseSignal = DispatchSemaphore(value: 0)
+
+    init(destination: URL) {
+        self.destination = destination
+    }
+
+    func resolve() -> URL {
+        let waiters = state.withLock { state in
+            state.hasEntered = true
+            let waiters = state.entryWaiters
+            state.entryWaiters.removeAll()
+            return waiters
+        }
+        for waiter in waiters {
+            waiter.resume()
+        }
+        releaseSignal.wait()
+        return destination
+    }
+
+    func waitUntilEntered() async {
+        await withCheckedContinuation { continuation in
+            let hasEntered = state.withLock { state in
+                guard !state.hasEntered else {
+                    return true
+                }
+
+                state.entryWaiters.append(continuation)
+                return false
+            }
+            if hasEntered {
+                continuation.resume()
+            }
+        }
+    }
+
+    func release() {
+        releaseSignal.signal()
     }
 }
 

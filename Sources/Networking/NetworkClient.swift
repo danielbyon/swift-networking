@@ -261,6 +261,7 @@ private func finalizeSuccessfulDownload(
             collisionPolicy = policy
         }
 
+        try Task.checkCancellation()
         try file.finalize(to: target, collisionPolicy: collisionPolicy)
     } catch {
         file.discard()
