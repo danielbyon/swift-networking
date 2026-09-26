@@ -432,9 +432,15 @@ struct BodyEncodingAndResponseDecodingTests {
         }
     }
 
-    @Test("File body strategies retain metadata without touching the file")
-    func fileBodyRetainsMetadataWithoutReadingAndRefusesTransport() async throws {
-        let url = URL(fileURLWithPath: "/path/that/does/not/exist/body.bin")
+    @Test("File-backed data requests retain their source and decode responses")
+    func fileBodyRetainsMetadataAndReachesTransport() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "swift-networking-\(UUID().uuidString).bin",
+        )
+        let sourceBytes = Data([0x5a, 0x00, 0xff])
+        try sourceBytes.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
         let body = try BodyEncoding<URL>.file(contentType: "application/x-file").prepare(
             url,
             clientJSONEncoderConfiguration: { _ in },
@@ -450,12 +456,13 @@ struct BodyEncodingAndResponseDecodingTests {
         #expect(headerValues(.contentType, in: body.inferredHeaders) == ["application/x-file"])
         let requestURL = try #require(URL(string: "https://example.com/upload"))
         let httpRequest = HTTPRequest(method: .post, url: requestURL, headerFields: body.inferredHeaders)
-        #expect(
+        let urlRequest = try #require(
             makeURLRequest(
                 TransportRequest(httpRequest: httpRequest, body: body.inspection),
                 assumesHTTP3Capable: nil,
-            ) == nil,
+            ),
         )
+        #expect(urlRequest.httpBody == nil)
         let overriddenFields = HeaderComposer.compose(
             libraryInferred: body.inferredHeaders,
             clientDefaults: makeFields((.contentType, "application/x-client")),
@@ -472,13 +479,17 @@ struct BodyEncodingAndResponseDecodingTests {
         )
         let transport = BodyRecordingTransport()
         let client = try NetworkClient(transport: transport)
-        do {
-            _ = try await client.send(Request(endpoint: endpoint, body: url))
-            Issue.record("Expected unsupported file-backed transport to fail before execution")
-        } catch let error as RequestConstructionError {
-            #expect(error.reason == .unsupportedOperationBodyCombination)
+        let response = try await client.send(Request(endpoint: endpoint, body: url))
+
+        #expect(response.value == Data([0x2a]))
+        let sentRequest = try #require(await transport.recordedRequests().first)
+        guard case let .file(sentURL) = sentRequest.body else {
+            Issue.record("Expected the original file URL to reach transport")
+            return
         }
-        #expect(await transport.executionCount() == 0)
+
+        #expect(sentURL == url)
+        #expect(await transport.executionCount() == 1)
     }
 
     @Test("Client JSON codec configuration survives every derived configuration modifier")

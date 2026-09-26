@@ -8,6 +8,18 @@
 import Foundation
 import HTTPTypes
 
+/// Selects how a request body is sent and how its response is handled.
+package enum EndpointOperation: Sendable, Equatable {
+    /// Keeps the response in memory for the endpoint's response decoder.
+    case data
+
+    /// Sends the required request body with upload-task semantics and decodes an in-memory response.
+    case upload
+
+    /// Reserves the internal operation value for file-backed download responses.
+    case download
+}
+
 /// A reusable HTTP contract that defines an operation's method, route, query, headers, authentication, and response decoding.
 public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Sendable {
     private enum HeaderStorage: Sendable {
@@ -19,6 +31,8 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
     package let route: EndpointRoute<Input>
     package let query: QueryEncoding<Input>
     package let bodyEncoding: BodyEncoding<Body>
+    /// The non-public operation semantics retained by every endpoint copy.
+    package let operation: EndpointOperation
     package let response: ResponseDecoding<Output>
     package let authenticationRequirement: AuthenticationRequirement
     package let jsonEncoderConfiguration: JSONEncoderConfiguration
@@ -35,6 +49,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
         route: EndpointRoute<Input>,
         query: QueryEncoding<Input>,
         bodyEncoding: BodyEncoding<Body>,
+        operation: EndpointOperation,
         response: ResponseDecoding<Output>,
         authenticationRequirement: AuthenticationRequirement = .none,
         jsonEncoderConfiguration: @escaping JSONEncoderConfiguration = { _ in },
@@ -50,6 +65,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
         self.route = route
         self.query = query
         self.bodyEncoding = bodyEncoding
+        self.operation = operation
         self.response = response
         self.authenticationRequirement = authenticationRequirement
         self.jsonEncoderConfiguration = jsonEncoderConfiguration
@@ -68,6 +84,31 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             route: route,
             query: query,
             bodyEncoding: bodyEncoding,
+            operation: operation,
+            response: response,
+            authenticationRequirement: authenticationRequirement,
+            jsonEncoderConfiguration: jsonEncoderConfiguration,
+            jsonDecoderConfiguration: jsonDecoderConfiguration,
+            responseValidationPolicy: responseValidationPolicy,
+            retryPolicy: retryPolicy,
+            redirectPolicy: redirectPolicy,
+            successfulResponseBodyRetentionPolicy: successfulResponseBodyRetentionPolicy,
+            validationErrorBodyRetentionPolicy: validationErrorBodyRetentionPolicy,
+            headerStorage: headerStorage,
+        )
+    }
+
+    /// Returns an internal endpoint copy with the selected operation semantics.
+    ///
+    /// This package-scoped seam allows execution preflight to validate operation/body
+    /// compatibility independently of the public endpoint factories.
+    package func withOperation(_ selectedOperation: EndpointOperation) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            bodyEncoding: bodyEncoding,
+            operation: selectedOperation,
             response: response,
             authenticationRequirement: authenticationRequirement,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
@@ -157,6 +198,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             route: route,
             query: query,
             bodyEncoding: bodyEncoding,
+            operation: operation,
             response: response,
             authenticationRequirement: authenticationRequirement,
             jsonEncoderConfiguration: { encoder in
@@ -187,6 +229,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             route: route,
             query: query,
             bodyEncoding: bodyEncoding,
+            operation: operation,
             response: response,
             authenticationRequirement: authenticationRequirement,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
@@ -212,6 +255,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             route: route,
             query: query,
             bodyEncoding: bodyEncoding,
+            operation: operation,
             response: response,
             authenticationRequirement: authenticationRequirement,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
@@ -232,6 +276,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             route: route,
             query: query,
             bodyEncoding: bodyEncoding,
+            operation: operation,
             response: response,
             authenticationRequirement: authenticationRequirement,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
@@ -252,6 +297,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             route: route,
             query: query,
             bodyEncoding: bodyEncoding,
+            operation: operation,
             response: response,
             authenticationRequirement: authenticationRequirement,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
@@ -274,6 +320,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             route: route,
             query: query,
             bodyEncoding: bodyEncoding,
+            operation: operation,
             response: response,
             authenticationRequirement: requirement,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
@@ -296,6 +343,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             route: route,
             query: query,
             bodyEncoding: bodyEncoding,
+            operation: operation,
             response: response,
             authenticationRequirement: authenticationRequirement,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
@@ -327,6 +375,7 @@ public struct Endpoint<Input: Sendable, Body: Sendable, Output: Sendable>: Senda
             route: route,
             query: query,
             bodyEncoding: bodyEncoding,
+            operation: operation,
             response: response,
             authenticationRequirement: authenticationRequirement,
             jsonEncoderConfiguration: jsonEncoderConfiguration,
@@ -446,6 +495,7 @@ extension Endpoint where Body == Never {
             route: route,
             query: query,
             bodyEncoding: .bodyless,
+            operation: .data,
             response: response,
         )
     }
@@ -473,6 +523,38 @@ extension Endpoint {
             route: route,
             query: query,
             bodyEncoding: body,
+            operation: .data,
+            response: response,
+        )
+    }
+}
+
+extension Endpoint {
+    /// Creates a bodyful upload endpoint whose response uses the supplied in-memory decoder.
+    ///
+    /// Upload endpoints always retain a body contract and use upload-task semantics for each
+    /// transport attempt.
+    ///
+    /// - Parameters:
+    ///   - method: The explicit HTTP method for every invocation.
+    ///   - route: The endpoint-owned route.
+    ///   - body: The strategy used to prepare the immutable request body.
+    ///   - response: The response decoding strategy.
+    ///   - query: The endpoint-owned query mechanism, defaulting to no endpoint query values.
+    /// - Returns: An immutable upload endpoint.
+    public static func upload(
+        method: HTTPRequest.Method,
+        route: EndpointRoute<Input>,
+        body: BodyEncoding<Body>,
+        response: ResponseDecoding<Output>,
+        query: QueryEncoding<Input> = .none,
+    ) -> Self {
+        Self(
+            method: method,
+            route: route,
+            query: query,
+            bodyEncoding: body,
+            operation: .upload,
             response: response,
         )
     }

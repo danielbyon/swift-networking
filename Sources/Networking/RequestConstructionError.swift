@@ -27,6 +27,9 @@ public struct RequestConstructionError: Error, Sendable, Equatable {
         /// Query layers could not be composed into a usable URL.
         case queryCompositionFailed
 
+        /// A file-backed request body is missing, not a regular file, or cannot be read.
+        case unreadableFileBody
+
         /// The selected operation cannot safely execute the request body's representation.
         case unsupportedOperationBodyCombination
     }

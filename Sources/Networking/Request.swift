@@ -11,6 +11,8 @@ import HTTPTypes
 /// An immutable invocation of an endpoint with its input and body dimensions erased.
 public struct Request<Output: Sendable>: Sendable {
     package let method: HTTPRequest.Method
+    /// The operation captured from the endpoint for this immutable invocation.
+    package let operation: EndpointOperation
     package let route: ResolvedEndpointRoute
     package let query: CapturedQuery
     package let requestQueryItems: [URLQueryItem]
@@ -30,6 +32,7 @@ public struct Request<Output: Sendable>: Sendable {
 
     private init(
         method: HTTPRequest.Method,
+        operation: EndpointOperation,
         route: ResolvedEndpointRoute,
         query: CapturedQuery,
         requestQueryItems: [URLQueryItem],
@@ -48,6 +51,7 @@ public struct Request<Output: Sendable>: Sendable {
         redirectPolicy: RedirectPolicy? = nil,
     ) {
         self.method = method
+        self.operation = operation
         self.route = route
         self.query = query
         self.requestQueryItems = requestQueryItems
@@ -74,6 +78,7 @@ public struct Request<Output: Sendable>: Sendable {
     public init<Input: Sendable>(endpoint: Endpoint<Input, Never, Output>, input: Input) {
         self.init(
             method: endpoint.method,
+            operation: endpoint.operation,
             route: endpoint.route.resolve(input: input),
             query: endpoint.query.capture(input: input),
             requestQueryItems: [],
@@ -96,6 +101,7 @@ public struct Request<Output: Sendable>: Sendable {
     public init(endpoint: Endpoint<Never, Never, Output>) {
         self.init(
             method: endpoint.method,
+            operation: endpoint.operation,
             route: endpoint.route.constantRoute,
             query: endpoint.query.constant,
             requestQueryItems: [],
@@ -128,6 +134,7 @@ public struct Request<Output: Sendable>: Sendable {
     ) {
         self.init(
             method: endpoint.method,
+            operation: endpoint.operation,
             route: endpoint.route.resolve(input: input),
             query: endpoint.query.capture(input: input),
             requestQueryItems: [],
@@ -156,6 +163,7 @@ public struct Request<Output: Sendable>: Sendable {
     public init<Body: Sendable>(endpoint: Endpoint<Never, Body, Output>, body: Body) {
         self.init(
             method: endpoint.method,
+            operation: endpoint.operation,
             route: endpoint.route.constantRoute,
             query: endpoint.query.constant,
             requestQueryItems: [],
@@ -187,6 +195,7 @@ public struct Request<Output: Sendable>: Sendable {
     ) -> Self {
         Self(
             method: method,
+            operation: operation,
             route: route,
             query: query,
             requestQueryItems: requestQueryItems,
@@ -216,6 +225,7 @@ public struct Request<Output: Sendable>: Sendable {
     public func queryItems(_ queryItems: [URLQueryItem]) -> Self {
         Self(
             method: method,
+            operation: operation,
             route: route,
             query: query,
             requestQueryItems: queryItems,
@@ -245,6 +255,7 @@ public struct Request<Output: Sendable>: Sendable {
     public func headers(_ fields: HTTPFields) -> Self {
         Self(
             method: method,
+            operation: operation,
             route: route,
             query: query,
             requestQueryItems: requestQueryItems,
@@ -278,6 +289,7 @@ public struct Request<Output: Sendable>: Sendable {
         fields[fields: name] = [HTTPField(name: name, value: value)]
         return Self(
             method: method,
+            operation: operation,
             route: route,
             query: query,
             requestQueryItems: requestQueryItems,
@@ -301,6 +313,7 @@ public struct Request<Output: Sendable>: Sendable {
     public func validationPolicy(_ policy: ResponseValidationPolicy) -> Self {
         Self(
             method: method,
+            operation: operation,
             route: route,
             query: query,
             requestQueryItems: requestQueryItems,
@@ -324,6 +337,7 @@ public struct Request<Output: Sendable>: Sendable {
     public func successfulResponseBodyRetentionPolicy(_ policy: BodyRetentionPolicy) -> Self {
         Self(
             method: method,
+            operation: operation,
             route: route,
             query: query,
             requestQueryItems: requestQueryItems,
@@ -347,6 +361,7 @@ public struct Request<Output: Sendable>: Sendable {
     public func validationErrorBodyRetentionPolicy(_ policy: BodyRetentionPolicy) -> Self {
         Self(
             method: method,
+            operation: operation,
             route: route,
             query: query,
             requestQueryItems: requestQueryItems,
@@ -372,6 +387,7 @@ public struct Request<Output: Sendable>: Sendable {
     public func retryPolicy(_ policy: RetryPolicy) -> Self {
         Self(
             method: method,
+            operation: operation,
             route: route,
             query: query,
             requestQueryItems: requestQueryItems,
@@ -406,6 +422,7 @@ public struct Request<Output: Sendable>: Sendable {
     public func redirectPolicy(_ policy: RedirectPolicy) -> Self {
         Self(
             method: method,
+            operation: operation,
             route: route,
             query: query,
             requestQueryItems: requestQueryItems,

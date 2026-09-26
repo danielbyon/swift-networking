@@ -233,13 +233,16 @@ package func makeURLRequest(
     return urlRequest
 }
 
-/// Converts transport metadata and an in-memory body into the Foundation request used by URLSession.
+/// Converts transport metadata and a data-task or upload execution into a Foundation request.
 ///
-/// File-backed bodies are not representable by this foreground data-task adapter and return nil.
+/// Incompatible operation and body combinations return nil because URLSession cannot execute them.
 package func makeURLRequest(
     _ request: TransportRequest,
     assumesHTTP3Capable: Bool?,
 ) -> URLRequest? {
+    guard let execution = request.execution else {
+        return nil
+    }
     guard var urlRequest = makeURLRequest(
         request.httpRequest,
         assumesHTTP3Capable: assumesHTTP3Capable,
@@ -247,16 +250,34 @@ package func makeURLRequest(
         return nil
     }
 
-    switch request.body {
-    case .none:
-        break
-    case let .data(data):
-        urlRequest.httpBody = data
-    case .file:
-        return nil
+    switch execution {
+    case let .data(body):
+        if let body {
+            urlRequest.httpBody = body
+        }
+    case .uploadFromData,
+         .uploadFromFile:
+        urlRequest.httpBody = nil
     }
 
     return urlRequest
+}
+
+/// Confirms that a caller-owned URL refers to a readable regular local file without loading it.
+private func validateFileBody(_ url: URL, requestID: RequestID) throws {
+    guard url.isFileURL,
+          let resourceValues = try? url.resourceValues(forKeys: [.isRegularFileKey]),
+          resourceValues.isRegularFile == true
+    else {
+        throw RequestConstructionError(requestID: requestID, reason: .unreadableFileBody)
+    }
+
+    do {
+        let file = try FileHandle(forReadingFrom: url)
+        try file.close()
+    } catch {
+        throw RequestConstructionError(requestID: requestID, reason: .unreadableFileBody)
+    }
 }
 
 /// Converts a positive Swift duration into Foundation's seconds-based timeout value.
@@ -301,10 +322,12 @@ private struct URLSessionTransport: NetworkTransport {
     }
 
     func executeWithMetrics(_ request: TransportRequest) async -> NetworkTransportResult {
-        guard let urlRequest = makeURLRequest(
-            request,
-            assumesHTTP3Capable: assumesHTTP3Capable,
-        ) else {
+        guard let execution = request.execution,
+              let urlRequest = makeURLRequest(
+                  request,
+                  assumesHTTP3Capable: assumesHTTP3Capable,
+              )
+        else {
             return .failure(error: URLError(.badURL), rawTaskMetrics: nil, didStartTask: false)
         }
 
@@ -312,7 +335,14 @@ private struct URLSessionTransport: NetworkTransport {
         let data: Data
         let urlResponse: URLResponse
         do {
-            (data, urlResponse) = try await session.data(for: urlRequest, delegate: delegate)
+            switch execution {
+            case .data:
+                (data, urlResponse) = try await session.data(for: urlRequest, delegate: delegate)
+            case let .uploadFromData(body):
+                (data, urlResponse) = try await session.upload(for: urlRequest, from: body, delegate: delegate)
+            case let .uploadFromFile(fileURL):
+                (data, urlResponse) = try await session.upload(for: urlRequest, fromFile: fileURL, delegate: delegate)
+            }
         } catch {
             let rawTaskMetrics = await delegate.taskMetricsAfterCompletion()
             if let limit = delegate.redirectLimitExceeded() {
@@ -1099,6 +1129,21 @@ public final class NetworkClient: Sendable {
                     clientJSONEncoderConfiguration: clientJSONEncoderConfiguration,
                     endpointJSONEncoderConfiguration: request.jsonEncoderConfiguration,
                 ) ?? .none
+                let bodyInspection = preparedBody.inspection
+                guard let execution = TransportExecution.resolve(
+                    operation: request.operation,
+                    body: bodyInspection,
+                ) else {
+                    throw RequestConstructionError(
+                        requestID: requestID,
+                        reason: .unsupportedOperationBodyCombination,
+                    )
+                }
+
+                if case let .uploadFromFile(fileURL) = execution {
+                    try validateFileBody(fileURL, requestID: requestID)
+                }
+
                 var inferredHeaders = preparedBody.inferredHeaders
                 if let inferredAccept = request.response.inferredAccept {
                     inferredHeaders[fields: .accept] = [HTTPField(name: .accept, value: inferredAccept)]
@@ -1110,11 +1155,6 @@ public final class NetworkClient: Sendable {
                     request: request.requestHeaders,
                 )
                 let httpRequest = HTTPRequest(method: request.method, url: url, headerFields: headerFields)
-                if case .file = preparedBody {
-                    throw RequestConstructionError(requestID: requestID, reason: .unsupportedOperationBodyCombination)
-                }
-
-                let bodyInspection = preparedBody.inspection
                 let adaptedRequest = try await adaptRequestForAttempt(
                     httpRequest,
                     body: bodyInspection,
@@ -1133,6 +1173,8 @@ public final class NetworkClient: Sendable {
                     requestID: requestID,
                     requestContext: request.context,
                     attemptNumber: nextAttemptNumber,
+                    operation: request.operation,
+                    execution: execution,
                 )
                 let transportResult = await networkTransport.executeWithMetrics(transportRequest)
 

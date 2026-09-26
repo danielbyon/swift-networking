@@ -74,14 +74,16 @@ extension BodyEncoding where Body == Data {
 }
 
 extension BodyEncoding where Body == URL {
-    /// Retains a file URL and optional media type without reading the file.
+    /// Retains a file URL and its explicitly supplied media type without reading the file.
     ///
     /// If the selected operation cannot safely execute the file-backed body representation,
     /// request construction fails before transport.
     ///
-    /// - Parameter contentType: An optional media type inferred for the request.
+    /// The media type is never inferred from the filename.
+    ///
+    /// - Parameter contentType: The media type inferred for the request.
     /// - Returns: A body encoding strategy that retains the URL as file metadata.
-    public static func file(contentType: String? = nil) -> Self {
+    public static func file(contentType: String) -> Self {
         Self { url, _, _ in .file(url, contentType: contentType) }
     }
 }
