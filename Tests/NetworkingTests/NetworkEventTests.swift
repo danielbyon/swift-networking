@@ -751,14 +751,17 @@ struct NetworkEventTests {
         )
         let task = try #require(client?.task(for: makeGetEventRequest()))
         client = nil
+        await transport.waitUntilStarted()
+
         let waiter = Task { try await task.value }
         waiter.cancel()
-        await transport.release()
 
         do {
             _ = try await waiter.value
             Issue.record("Expected only the value waiter to be cancelled")
         } catch is CancellationError {}
+
+        await transport.release()
         _ = try await task.value
         let events = await capture.eventsThroughTerminal()
         #expect(events.last?.kind == "requestCompleted")
