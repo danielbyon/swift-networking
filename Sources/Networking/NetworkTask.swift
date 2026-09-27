@@ -18,13 +18,47 @@ private final class NetworkTaskState<Value: Sendable>: Sendable {
 
     private let storage = Mutex(Storage())
     private let progressCoordinator = NetworkProgressCoordinator()
+    private let onAttemptStarted: @Sendable (UInt) -> Void
+    private let onTerminal: @Sendable (Result<Response<Value>, any Error>) -> Void
+    private let onCancelled: @Sendable () -> Void
+
+    init(
+        onAttemptStarted: @escaping @Sendable (UInt) -> Void,
+        onTerminal: @escaping @Sendable (Result<Response<Value>, any Error>) -> Void,
+        onCancelled: @escaping @Sendable () -> Void,
+    ) {
+        self.onAttemptStarted = onAttemptStarted
+        self.onTerminal = onTerminal
+        self.onCancelled = onCancelled
+    }
 
     var progress: NetworkProgressSequence {
         progressCoordinator.progress
     }
 
     var reporter: NetworkProgressReporter {
-        progressCoordinator.reporter
+        progressCoordinator.reporter { [self] attemptNumber, expectedBytesToSend in
+            commitAttemptStart(
+                attemptNumber: attemptNumber,
+                expectedBytesToSend: expectedBytesToSend,
+            )
+        }
+    }
+
+    private func commitAttemptStart(attemptNumber: UInt, expectedBytesToSend: Int64?) -> Bool {
+        // Keep progress and event publication inside the result lock used by completion and cancellation.
+        storage.withLock { storage in
+            guard storage.pendingResult == nil, storage.terminalResult == nil else {
+                return false
+            }
+
+            progressCoordinator.startAttempt(
+                attemptNumber: attemptNumber,
+                expectedBytesToSend: expectedBytesToSend,
+            )
+            onAttemptStarted(attemptNumber)
+            return true
+        }
     }
 
     func value(for waiterID: UUID) async throws -> Response<Value> {
@@ -67,6 +101,7 @@ private final class NetworkTaskState<Value: Sendable>: Sendable {
             return
         }
 
+        onTerminal(result)
         if case .success = result {
             progressCoordinator.finish(successfully: true)
         } else {
@@ -111,6 +146,7 @@ private final class NetworkTaskState<Value: Sendable>: Sendable {
             return false
         }
 
+        onCancelled()
         progressCoordinator.finish(successfully: false)
         finishCompletion(with: cancellation)
         return true
@@ -130,10 +166,17 @@ public final class NetworkTask<Value: Sendable>: Sendable {
 
     package init(
         requestID: RequestID,
+        onAttemptStarted: @escaping @Sendable (UInt) -> Void = { _ in },
+        onTerminal: @escaping @Sendable (Result<Response<Value>, any Error>) -> Void = { _ in },
+        onCancelled: @escaping @Sendable () -> Void = {},
         operation: @escaping @Sendable (NetworkProgressReporter) async throws -> Response<Value>,
     ) {
         self.requestID = requestID
-        let taskState = NetworkTaskState<Value>()
+        let taskState = NetworkTaskState<Value>(
+            onAttemptStarted: onAttemptStarted,
+            onTerminal: onTerminal,
+            onCancelled: onCancelled,
+        )
         state = taskState
         progress = taskState.progress
         let reporter = taskState.reporter

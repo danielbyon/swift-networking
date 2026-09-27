@@ -70,6 +70,7 @@ package struct TransportRequest: Sendable {
     package let requestID: RequestID
     package let requestContext: RequestContext
     package let attemptNumber: UInt
+    package let eventExecution: NetworkEventExecution?
 
     package init(
         httpRequest: HTTPRequest,
@@ -80,6 +81,7 @@ package struct TransportRequest: Sendable {
         attemptNumber: UInt = 1,
         operation: EndpointOperation = .data,
         execution: TransportExecution? = nil,
+        eventExecution: NetworkEventExecution? = nil,
     ) {
         self.httpRequest = httpRequest
         self.body = body
@@ -89,5 +91,6 @@ package struct TransportRequest: Sendable {
         self.requestID = requestID
         self.requestContext = requestContext
         self.attemptNumber = attemptNumber
+        self.eventExecution = eventExecution
     }
 }

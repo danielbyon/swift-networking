@@ -118,15 +118,35 @@ public struct NetworkProgressSequence: AsyncSequence, Sendable {
 /// Reports URLSession byte callbacks to one logical task's shared progress state.
 package struct NetworkProgressReporter: Sendable {
     private let coordinator: NetworkProgressCoordinator
+    private let commitAttemptStart: @Sendable (UInt, Int64?) -> Bool
 
-    fileprivate init(coordinator: NetworkProgressCoordinator) {
+    fileprivate init(
+        coordinator: NetworkProgressCoordinator,
+        commitAttemptStart: (@Sendable (UInt, Int64?) -> Bool)? = nil,
+    ) {
         self.coordinator = coordinator
+        self.commitAttemptStart = commitAttemptStart ?? { attemptNumber, expectedBytesToSend in
+            coordinator.startAttempt(
+                attemptNumber: attemptNumber,
+                expectedBytesToSend: expectedBytesToSend,
+            )
+            return true
+        }
     }
 
-    package func startAttempt(attemptNumber: UInt, expectedBytesToSend: Int64?) {
-        coordinator.startAttempt(
-            attemptNumber: attemptNumber,
-            expectedBytesToSend: Self.usableExpectedBytes(expectedBytesToSend),
+    /// Publishes the start of an attempt if the shared logical execution is still active.
+    ///
+    /// A transport must not start work when this method returns false.
+    ///
+    /// - Parameters:
+    ///   - attemptNumber: The one-based position of the attempt in the logical execution.
+    ///   - expectedBytesToSend: The expected upload size, when it is known.
+    /// - Returns: Whether the attempt start was committed before shared cancellation or completion.
+    @discardableResult
+    package func startAttempt(attemptNumber: UInt, expectedBytesToSend: Int64?) -> Bool {
+        commitAttemptStart(
+            attemptNumber,
+            Self.usableExpectedBytes(expectedBytesToSend),
         )
     }
 
@@ -183,6 +203,12 @@ final class NetworkProgressCoordinator: Sendable {
 
     var reporter: NetworkProgressReporter {
         NetworkProgressReporter(coordinator: self)
+    }
+
+    func reporter(
+        commitAttemptStart: @escaping @Sendable (UInt, Int64?) -> Bool,
+    ) -> NetworkProgressReporter {
+        NetworkProgressReporter(coordinator: self, commitAttemptStart: commitAttemptStart)
     }
 
     func startAttempt(attemptNumber: UInt, expectedBytesToSend: Int64?) {

@@ -118,6 +118,8 @@ Authentication is the final outgoing request mutation stage.
 - MockNetworkTransport never falls back to live networking.
 - One logical execution gets exactly one RequestID.
 - Attempt numbers correspond only to actual URLSession tasks.
+- Attempt start and `attemptStarted` publication commit together against shared cancellation;
+  cancellation that wins first starts no URLSession task.
 - Body preparation, general adapters, and authentication adaptation rerun for each attempt.
 - Authentication replay and ordinary retry have independent budgets.
 - Retry happens before final response validation.
@@ -125,6 +127,7 @@ Authentication is the final outgoing request mutation stage.
 - Explicit cancellation surfaces as CancellationError.
 - One waiter cancelling a shared NetworkTask does not cancel the shared operation.
 - Progress is latest-state multicast, not an event-history log.
+- NetworkEvent is bounded best-effort lifecycle history with FIFO submission per observer; registration order governs submission, not callback completion across observers.
 - Successful terminal progress occurs only after the entire logical operation succeeds.
 - Response retains attempt metrics for the full multi-attempt execution.
 - Downloads are not loaded wholly into memory merely for validation or authentication.

@@ -348,11 +348,17 @@ extension NetworkTransport {
                 didStartTask: false,
             )
         }
-
-        progress.startAttempt(
+        guard progress.startAttempt(
             attemptNumber: request.attemptNumber,
             expectedBytesToSend: expectedRequestBodyByteCount(request.execution),
-        )
+        ) else {
+            return .failure(
+                error: CancellationError(),
+                rawTaskMetrics: nil,
+                didStartTask: false,
+            )
+        }
+
         do {
             let (data, response) = try await execute(request)
             return .success(data: data, response: response, rawTaskMetrics: nil)
@@ -499,6 +505,7 @@ package struct URLSessionTransport: NetworkTransport {
     private let delegateRouter: URLSessionDelegateRouter
     private let assumesHTTP3Capable: Bool?
     private let beforeTaskStart: (@Sendable () async -> Void)?
+    private let afterTaskStartDecision: (@Sendable (Bool) -> Void)?
 
     /// Creates the one foreground session shared by every attempt executed by this transport.
     ///
@@ -506,10 +513,12 @@ package struct URLSessionTransport: NetworkTransport {
     ///   - configuration: The client policies used to configure a production foreground session.
     ///   - sessionConfiguration: An optional package-only session configuration for deterministic tests.
     ///   - beforeTaskStart: An optional package-only hook for holding task start in deterministic tests.
+    ///   - afterTaskStartDecision: An optional package-only hook for observing task-start arbitration in tests.
     package init(
         configuration: NetworkClient.Configuration,
         sessionConfiguration: URLSessionConfiguration? = nil,
         beforeTaskStart: (@Sendable () async -> Void)? = nil,
+        afterTaskStartDecision: (@Sendable (Bool) -> Void)? = nil,
     ) {
         let router = URLSessionDelegateRouter()
         delegateRouter = router
@@ -521,6 +530,7 @@ package struct URLSessionTransport: NetworkTransport {
         )
         assumesHTTP3Capable = configuration.assumesHTTP3Capable
         self.beforeTaskStart = beforeTaskStart
+        self.afterTaskStartDecision = afterTaskStartDecision
     }
 
     package func execute(_ request: TransportRequest) async throws -> (Data, HTTPResponse) {
@@ -661,6 +671,7 @@ package struct URLSessionTransport: NetworkTransport {
                     expectedBytesToSend: expectedRequestBodyByteCount(execution),
                     progress: progress,
                     continuation: continuation,
+                    afterStartDecision: afterTaskStartDecision,
                 ) else {
                     continuation.resume(returning: .notStarted)
                     return
@@ -738,6 +749,7 @@ private final class URLSessionTaskStartControl: Sendable {
         expectedBytesToSend: Int64?,
         progress: NetworkProgressReporter,
         continuation: CheckedContinuation<URLSessionTaskExecutionResult, Never>,
+        afterStartDecision: (@Sendable (Bool) -> Void)?,
     ) -> Bool {
         let didCommitStart = state.withLock { currentState in
             guard currentState == .pending else {
@@ -748,7 +760,17 @@ private final class URLSessionTaskStartControl: Sendable {
                 return false
             }
 
-            // Install the waiter before committing start so an early completion is retained.
+            // Shared task state arbitrates this start against cancellation and submits the
+            // attempt event before either transition releases its lock.
+            guard progress.startAttempt(
+                attemptNumber: attemptNumber,
+                expectedBytesToSend: expectedBytesToSend,
+            ) else {
+                currentState = .cancelled
+                return false
+            }
+
+            // Install the waiter before exposing .starting so an immediate completion is retained.
             delegate.waitForTaskCompletion(continuation)
             currentState = .starting(cancelAfterResume: false)
             return true
@@ -756,13 +778,12 @@ private final class URLSessionTaskStartControl: Sendable {
 
         guard didCommitStart else {
             task.cancel()
+            afterStartDecision?(false)
             return false
         }
 
-        progress.startAttempt(
-            attemptNumber: attemptNumber,
-            expectedBytesToSend: expectedBytesToSend,
-        )
+        afterStartDecision?(true)
+
         task.resume()
 
         let shouldCancelAfterResume = state.withLock { currentState in
@@ -960,6 +981,7 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
     private let requestID: RequestID
     private let requestContext: RequestContext
     private let attemptNumber: UInt
+    private let eventExecution: NetworkEventExecution?
     private let initialRequest: URLRequest
     private let progressReporter: NetworkProgressReporter?
     private let isDownloadTask: Bool
@@ -973,6 +995,7 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
         requestID = transportRequest.requestID
         requestContext = transportRequest.requestContext
         attemptNumber = transportRequest.attemptNumber
+        eventExecution = transportRequest.eventExecution
         self.initialRequest = initialRequest
         self.progressReporter = progressReporter
         isDownloadTask = transportRequest.operation == .download
@@ -1100,7 +1123,28 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
             attemptNumber: attemptNumber,
             redirectOrdinal: redirectOrdinal,
         )
-        guard redirectPolicy.decision(for: context) == .follow else {
+        let decision = redirectPolicy.decision(for: context)
+        guard let proposedHTTPRequest = newRequest.httpRequest else {
+            preconditionFailure("URLSession supplied an invalid HTTP request for a redirect proposal.")
+        }
+
+        if let eventExecution {
+            eventExecution.submit(
+                .redirectDecision(
+                    RedirectDecisionEvent(
+                        requestID: requestID,
+                        timestamp: eventExecution.delivery.timestamp(),
+                        requestContext: requestContext,
+                        attemptNumber: attemptNumber,
+                        redirectOrdinal: redirectOrdinal,
+                        httpResponse: httpResponse,
+                        proposedRequest: proposedHTTPRequest,
+                        decision: decision,
+                    ),
+                ),
+            )
+        }
+        guard decision == .follow else {
             completionHandler(nil)
             return
         }
@@ -1436,6 +1480,7 @@ public final class NetworkClient: Sendable {
 
         package let requestIDGenerator: any RequestIDGenerator
         package let requestAdapters: [AnyRequestAdapter]
+        package let eventObservers: [NetworkEventObserver]
 
         /// Creates client configuration with an optional base URL.
         ///
@@ -1466,6 +1511,7 @@ public final class NetworkClient: Sendable {
             assumesHTTP3Capable = nil
             requestIDGenerator = UUIDRequestIDGenerator()
             requestAdapters = []
+            eventObservers = []
         }
 
         private init(
@@ -1492,6 +1538,7 @@ public final class NetworkClient: Sendable {
             assumesHTTP3Capable: Bool?,
             requestIDGenerator: any RequestIDGenerator,
             requestAdapters: [AnyRequestAdapter],
+            eventObservers: [NetworkEventObserver],
             authenticationProvider: (any AuthenticationProvider)?,
         ) {
             self.baseURL = baseURL
@@ -1517,6 +1564,7 @@ public final class NetworkClient: Sendable {
             self.assumesHTTP3Capable = assumesHTTP3Capable
             self.requestIDGenerator = requestIDGenerator
             self.requestAdapters = requestAdapters
+            self.eventObservers = eventObservers
             self.authenticationProvider = authenticationProvider
         }
 
@@ -1580,6 +1628,18 @@ public final class NetworkClient: Sendable {
         /// - Returns: A configuration with the adapter added after existing adapters.
         public func withRequestAdapter(_ adapter: some RequestAdapter) -> Self {
             copying(requestAdapters: .set(requestAdapters + [AnyRequestAdapter(adapter)]))
+        }
+
+        /// Returns a copy with one lifecycle observer appended to the delivery order.
+        ///
+        /// Each observer receives events through an independent bounded queue. Callbacks run
+        /// asynchronously, and a slow callback does not delay request execution or another observer.
+        /// Repeated calls append observers in call order.
+        ///
+        /// - Parameter observer: The observer to append for future logical executions.
+        /// - Returns: A configuration with the observer added after existing observers.
+        public func withEventObserver(_ observer: NetworkEventObserver) -> Self {
+            copying(eventObservers: .set(eventObservers + [observer]))
         }
 
         /// Returns a copy using the supplied authentication provider, or no provider when nil.
@@ -1734,6 +1794,7 @@ public final class NetworkClient: Sendable {
             assumesHTTP3Capable assumesHTTP3CapableUpdate: ConfigurationFieldUpdate<Bool?> = .unchanged,
             requestIDGenerator requestIDGeneratorUpdate: ConfigurationFieldUpdate<any RequestIDGenerator> = .unchanged,
             requestAdapters requestAdaptersUpdate: ConfigurationFieldUpdate<[AnyRequestAdapter]> = .unchanged,
+            eventObservers eventObserversUpdate: ConfigurationFieldUpdate<[NetworkEventObserver]> = .unchanged,
             authenticationProvider authenticationProviderUpdate: ConfigurationFieldUpdate<
                 (any AuthenticationProvider)?,
             > = .unchanged,
@@ -1776,6 +1837,7 @@ public final class NetworkClient: Sendable {
                 assumesHTTP3Capable: assumesHTTP3CapableUpdate.applying(to: assumesHTTP3Capable),
                 requestIDGenerator: requestIDGeneratorUpdate.applying(to: requestIDGenerator),
                 requestAdapters: requestAdaptersUpdate.applying(to: requestAdapters),
+                eventObservers: eventObserversUpdate.applying(to: eventObservers),
                 authenticationProvider: authenticationProviderUpdate.applying(to: authenticationProvider),
             )
         }
@@ -1784,6 +1846,7 @@ public final class NetworkClient: Sendable {
     private let transport: any NetworkTransport
     private let configuration: Configuration
     private let retryTimingDependencies: RetryTimingDependencies
+    private let eventDelivery: NetworkEventDelivery
 
     /// Creates a client that owns a foreground URL session for its requests.
     public convenience init() {
@@ -1841,6 +1904,10 @@ public final class NetworkClient: Sendable {
         self.transport = transport
         self.configuration = configuration
         self.retryTimingDependencies = retryTimingDependencies
+        eventDelivery = NetworkEventDelivery(
+            observers: configuration.eventObservers,
+            now: retryTimingDependencies.now,
+        )
     }
 
     /// Starts a shared logical execution immediately.
@@ -1849,6 +1916,21 @@ public final class NetworkClient: Sendable {
     /// - Returns: A shared task whose value is produced by exactly one execution.
     public func task<Output: Sendable>(for request: Request<Output>) -> NetworkTask<Output> {
         let requestID = configuration.requestIDGenerator.generateRequestID()
+        let delivery = eventDelivery
+        let eventExecution = NetworkEventExecution(
+            requestID: requestID,
+            requestContext: request.context,
+            delivery: delivery,
+        )
+        eventExecution.submit(
+            .requestStarted(
+                RequestStartedEvent(
+                    requestID: requestID,
+                    timestamp: delivery.timestamp(),
+                    requestContext: request.context,
+                ),
+            ),
+        )
         let networkTransport = transport
         let timingDependencies = retryTimingDependencies
         let baseURL = configuration.baseURL
@@ -1872,7 +1954,51 @@ public final class NetworkClient: Sendable {
                 .relative
             }
 
-        return NetworkTask(requestID: requestID) { progress in
+        return NetworkTask(
+            requestID: requestID,
+            onAttemptStarted: { attemptNumber in
+                eventExecution.attemptStarted(number: attemptNumber)
+            },
+            onTerminal: { result in
+                let timestamp = delivery.timestamp()
+                switch result {
+                case let .success(response):
+                    eventExecution.submitTerminal(
+                        .requestCompleted(
+                            RequestCompletedEvent(
+                                requestID: requestID,
+                                timestamp: timestamp,
+                                requestContext: request.context,
+                                httpResponse: response.httpResponse,
+                                attempts: response.attempts,
+                            ),
+                        ),
+                    )
+                case let .failure(error):
+                    eventExecution.submitTerminal(
+                        .requestFailed(
+                            RequestFailedEvent(
+                                requestID: requestID,
+                                timestamp: timestamp,
+                                requestContext: request.context,
+                                error: error,
+                            ),
+                        ),
+                    )
+                }
+            },
+            onCancelled: {
+                eventExecution.submitTerminal(
+                    .requestCancelled(
+                        RequestCancelledEvent(
+                            requestID: requestID,
+                            timestamp: delivery.timestamp(),
+                            requestContext: request.context,
+                        ),
+                    ),
+                )
+            },
+        ) { progress in
             let routeURL = try Self.preflightURL(for: request.route, baseURL: baseURL, requestID: requestID)
             let url = try QueryComposer.compose(
                 url: routeURL,
@@ -1946,7 +2072,9 @@ public final class NetworkClient: Sendable {
                     attemptNumber: nextAttemptNumber,
                     operation: request.operation,
                     execution: execution,
+                    eventExecution: eventExecution,
                 )
+                eventExecution.prepareAttempt(number: nextAttemptNumber, request: adaptedRequest)
                 let transportResult = await executeTransportAttempt(
                     using: networkTransport,
                     request: transportRequest,
@@ -1967,16 +2095,46 @@ public final class NetworkClient: Sendable {
                             rawTaskMetrics: rawTaskMetrics,
                         ),
                     )
-                    throw RedirectError.tooManyRedirects(
+                    let error = RedirectError.tooManyRedirects(
                         requestID: requestID,
                         maximumRedirects: maximumRedirects,
                         lastResponse: lastResponse,
                         attempts: attempts,
                     )
+                    eventExecution.submit(
+                        .attemptFailed(
+                            AttemptFailedEvent(
+                                requestID: requestID,
+                                timestamp: delivery.timestamp(),
+                                requestContext: request.context,
+                                attemptNumber: attemptNumber,
+                                request: adaptedRequest,
+                                httpResponse: lastResponse,
+                                error: error,
+                                normalizedMetrics: normalizedMetrics,
+                                rawTaskMetrics: rawTaskMetrics,
+                            ),
+                        ),
+                    )
+                    throw error
 
                 case let .success(body: successfulBody, response: httpResponse, rawTaskMetrics):
                     attemptNumber = nextAttemptNumber
                     let normalizedMetrics = NormalizedAttemptMetrics(taskMetrics: rawTaskMetrics)
+                    eventExecution.submit(
+                        .responseReceived(
+                            ResponseReceivedEvent(
+                                requestID: requestID,
+                                timestamp: delivery.timestamp(),
+                                requestContext: request.context,
+                                attemptNumber: attemptNumber,
+                                request: adaptedRequest,
+                                httpResponse: httpResponse,
+                                normalizedMetrics: normalizedMetrics,
+                                rawTaskMetrics: rawTaskMetrics,
+                            ),
+                        ),
+                    )
                     try Task.checkCancellation()
 
                     if let replayAttempt = try await authenticationReplayAttempt(
@@ -1993,6 +2151,20 @@ public final class NetworkClient: Sendable {
                     ) {
                         successfulBody.discardFile()
                         attempts.append(replayAttempt)
+                        eventExecution.submit(
+                            .authenticationReplayScheduled(
+                                AuthenticationReplayScheduledEvent(
+                                    requestID: requestID,
+                                    timestamp: delivery.timestamp(),
+                                    requestContext: request.context,
+                                    attemptNumber: attemptNumber,
+                                    request: adaptedRequest,
+                                    httpResponse: httpResponse,
+                                    normalizedMetrics: replayAttempt.normalizedMetrics,
+                                    rawTaskMetrics: replayAttempt.rawTaskMetrics,
+                                ),
+                            ),
+                        )
                         authenticationReplayCount += 1
                         try Task.checkCancellation()
                         continue
@@ -2045,6 +2217,22 @@ public final class NetworkClient: Sendable {
                             policy: retryPolicy.retryAfterPolicy,
                             maximumServerDelay: retryPolicy.maximumRetryAfterDelay,
                             now: timingDependencies.now(),
+                        )
+                        eventExecution.submit(
+                            .retryScheduled(
+                                RetryScheduledEvent(
+                                    requestID: requestID,
+                                    timestamp: delivery.timestamp(),
+                                    requestContext: request.context,
+                                    attemptNumber: attemptNumber,
+                                    request: adaptedRequest,
+                                    httpResponse: httpResponse,
+                                    transportError: nil,
+                                    delay: delay,
+                                    normalizedMetrics: normalizedMetrics,
+                                    rawTaskMetrics: rawTaskMetrics,
+                                ),
+                            ),
                         )
                         successfulBody.discardFile()
                         try await RetryTiming.sleepIfNeeded(delay, using: timingDependencies.sleep)
@@ -2128,6 +2316,20 @@ public final class NetworkClient: Sendable {
 
                     attemptNumber = nextAttemptNumber
                     let normalizedMetrics = NormalizedAttemptMetrics(taskMetrics: rawTaskMetrics)
+                    eventExecution.submit(
+                        .attemptFailed(
+                            AttemptFailedEvent(
+                                requestID: requestID,
+                                timestamp: delivery.timestamp(),
+                                requestContext: request.context,
+                                attemptNumber: attemptNumber,
+                                request: adaptedRequest,
+                                error: error,
+                                normalizedMetrics: normalizedMetrics,
+                                rawTaskMetrics: rawTaskMetrics,
+                            ),
+                        ),
+                    )
                     if error is CancellationError {
                         attempts.append(
                             AttemptMetrics(
@@ -2204,6 +2406,22 @@ public final class NetworkClient: Sendable {
                         policy: retryPolicy.retryAfterPolicy,
                         maximumServerDelay: retryPolicy.maximumRetryAfterDelay,
                         now: timingDependencies.now(),
+                    )
+                    eventExecution.submit(
+                        .retryScheduled(
+                            RetryScheduledEvent(
+                                requestID: requestID,
+                                timestamp: delivery.timestamp(),
+                                requestContext: request.context,
+                                attemptNumber: attemptNumber,
+                                request: adaptedRequest,
+                                httpResponse: nil,
+                                transportError: error,
+                                delay: delay,
+                                normalizedMetrics: normalizedMetrics,
+                                rawTaskMetrics: rawTaskMetrics,
+                            ),
+                        ),
                     )
                     try await RetryTiming.sleepIfNeeded(delay, using: timingDependencies.sleep)
                     retryCount += 1
