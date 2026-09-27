@@ -1,0 +1,19 @@
+Tests/NetworkingTests/NetworkEventTests.swift
+  s_4461c2d5418f2e::t_05938750ed8552 754-755,763-764
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b756507d476baa28f6f15f6043f457d6fdde9943",
+  "prompts": {},
+  "sessions": {
+    "s_4461c2d5418f2e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0dffc-f169-7401-b1a4-e917cbe8576e",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
