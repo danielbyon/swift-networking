@@ -1,0 +1,24 @@
+Sources/Networking/NetworkLogger.swift
+  s_a7bef8913d80fb::t_4aae7fe6c10052 460
+  s_a7bef8913d80fb::t_b60a783f95b11e 439-447,473
+  s_a7bef8913d80fb::t_a011c00d7fd18d 33,326,385-396,398-403,405-408,412-413,419-438,448-459,461-472,474-490
+Tests/NetworkingTests/NetworkLoggerTests.swift
+  s_a7bef8913d80fb::t_b60a783f95b11e 201-231,455,458,475,478,494,497,512,515,532,535
+  s_a7bef8913d80fb::t_de7d0e26549f80 200,232-240,413,419,424-425,448-454,456-457,459-474,476-477,479-493,495-496,498-511,513-514,516-531,533-534,536-548
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ae758b2f65011748d9bef5346de9bc2b38779fe4",
+  "prompts": {},
+  "sessions": {
+    "s_a7bef8913d80fb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e49d-d3a2-7b72-a520-fcbe2acbccef",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
