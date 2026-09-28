@@ -238,6 +238,45 @@ struct NetworkLoggerTests {
         #expect(!configuredMessage.contains("CALLER-CONFIG-SECRET"))
     }
 
+    @Test("Generic header values containing multiple URLs are fully redacted")
+    func genericHeaderContainingMultipleURLsIsRedacted() throws {
+        let headerName = try #require(
+            HTTPField.Name("X-Multi-URL"),
+            "The test header name must be valid",
+        )
+        let linkHeaderName = try #require(HTTPField.Name("Link"), "The Link header name must be valid")
+        var headers = HTTPFields()
+        headers[headerName] = "https://FIRST-URL-USER:FIRST-URL-PASSWORD@first.example/p, https://SECOND-URL-USER:SECOND-URL-PASSWORD@second.example/next?key=MULTI-URL-QUERY-SECRET"
+        headers[linkHeaderName] = "<https://LINK-USER:LINK-PASSWORD@link.example/next?token=LINK-QUERY-SECRET>"
+        let request = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "example.com",
+            path: "/resource",
+            headerFields: headers,
+        )
+        let event = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: request,
+        ))
+
+        let message = NetworkLoggerFormatter(configuration: .init()).format(event).message
+
+        #expect(message.contains("x-multi-url=<redacted>"))
+        #expect(!message.contains("FIRST-URL-USER"))
+        #expect(!message.contains("FIRST-URL-PASSWORD"))
+        #expect(!message.contains("SECOND-URL-USER"))
+        #expect(!message.contains("SECOND-URL-PASSWORD"))
+        #expect(!message.contains("MULTI-URL-QUERY-SECRET"))
+        #expect(message.contains("link=\"<https://link.example/next?token=<redacted>>\""))
+        #expect(!message.contains("LINK-USER"))
+        #expect(!message.contains("LINK-PASSWORD"))
+        #expect(!message.contains("LINK-QUERY-SECRET"))
+    }
+
     @Test("Sensitive header names are matched case-insensitively")
     func sensitiveHeaderNamesAreMatchedCaseInsensitively() {
         var headers = HTTPFields()
@@ -443,6 +482,67 @@ struct NetworkLoggerTests {
         #expect(message.contains("body=binary"))
         #expect(message.contains("retained_bytes=4"))
         #expect(!message.contains("\u{FFFD}"))
+    }
+
+    @Test("C0, DEL, and C1 control bytes are described structurally")
+    func controlBytesAreDescribedStructurally() {
+        let cases = [
+            Data([0x00, 0x01, 0x02]),
+            Data([0x1b, 0x7f]),
+            Data([0xc2, 0x80]),
+        ]
+
+        for bytes in cases {
+            let error = makeValidationError(
+                body: RetainedBody(data: bytes, originalByteCount: Int64(bytes.count)),
+                reason: nil,
+            )
+            let formatter = NetworkLoggerFormatter(configuration: .init(
+                bodyDiagnostics: .enabled(maximumBytes: UInt(bytes.count)),
+            ))
+            let message = formatter.format(requestFailedEvent(error: error)).message
+
+            #expect(message.contains("body=binary"))
+            #expect(!message.contains("body=text"))
+            #expect(!message.contains("content="))
+        }
+    }
+
+    @Test("Tab, newline, and carriage return remain escaped text")
+    func permittedWhitespaceControlsRemainText() {
+        let bytes = Data([0x09, 0x0a, 0x0d])
+        let error = makeValidationError(
+            body: RetainedBody(data: bytes, originalByteCount: Int64(bytes.count)),
+            reason: nil,
+        )
+        let formatter = NetworkLoggerFormatter(configuration: .init(
+            bodyDiagnostics: .enabled(maximumBytes: UInt(bytes.count)),
+        ))
+
+        let message = formatter.format(requestFailedEvent(error: error)).message
+
+        #expect(message.contains("body=text"))
+        #expect(message.contains("content=\\t\\n\\r"))
+        #expect(!message.contains("body=binary"))
+    }
+
+    @Test("Ordinary Unicode body text remains textual")
+    func ordinaryUnicodeBodyRemainsText() {
+        let bodyText = "café 🦄"
+        let bytes = Data(bodyText.utf8)
+        let error = makeValidationError(
+            body: RetainedBody(data: bytes, originalByteCount: Int64(bytes.count)),
+            reason: nil,
+        )
+        let formatter = NetworkLoggerFormatter(configuration: .init(
+            bodyDiagnostics: .enabled(maximumBytes: UInt(bytes.count)),
+        ))
+
+        let message = formatter.format(requestFailedEvent(error: error)).message
+
+        #expect(message.contains("body=text"))
+        #expect(message.contains("content=café\\s🦄"))
+        #expect(!message.contains("body=binary"))
     }
 
     @Test("A small body cap classifies only its bounded prefix")

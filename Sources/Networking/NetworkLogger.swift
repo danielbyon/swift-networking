@@ -416,8 +416,10 @@ enum NetworkPrivacySanitizer {
         ].joined(separator: " ")
     }
 
-    /// Validates only the capped prefix plus at most three continuation bytes. A truncated retained
-    /// body may end at an incomplete scalar, but malformed continuation bytes still fail.
+    /// Validates only the capped prefix plus at most three continuation bytes. Printable Unicode,
+    /// tab, line feed, and carriage return are accepted; other C0, DEL, and C1 controls fail. A
+    /// truncated retained body may end at an incomplete scalar, but malformed continuation bytes
+    /// still fail.
     private static func validUTF8PrefixByteCount(
         in data: Data,
         maximumCount: Int,
@@ -427,7 +429,7 @@ enum NetworkPrivacySanitizer {
 
         while index < maximumCount {
             let firstByte = data[index]
-            if firstByte <= 0x7f {
+            if isPrintableTextASCIIByte(firstByte) {
                 index += 1
                 continue
             }
@@ -474,7 +476,13 @@ enum NetworkPrivacySanitizer {
                 let byte = data[index + offset]
                 let minimum = offset == 1 ? secondByteMinimum : 0x80
                 let maximum = offset == 1 ? secondByteMaximum : 0xbf
-                guard byte >= minimum, byte <= maximum else {
+                guard isValidTextContinuationByte(
+                    byte,
+                    firstByte: firstByte,
+                    offset: offset,
+                    minimum: minimum,
+                    maximum: maximum,
+                ) else {
                     return nil
                 }
             }
@@ -486,6 +494,32 @@ enum NetworkPrivacySanitizer {
         }
 
         return maximumCount
+    }
+
+    private static func isPrintableTextASCIIByte(_ byte: UInt8) -> Bool {
+        switch byte {
+        case 0x09,
+             0x0a,
+             0x0d,
+             0x20 ... 0x7e:
+            true
+        default:
+            false
+        }
+    }
+
+    private static func isValidTextContinuationByte(
+        _ byte: UInt8,
+        firstByte: UInt8,
+        offset: Int,
+        minimum: UInt8,
+        maximum: UInt8,
+    ) -> Bool {
+        guard byte >= minimum, byte <= maximum else {
+            return false
+        }
+
+        return firstByte != 0xc2 || offset != 1 || byte >= 0xa0
     }
 
     static func responseValidationErrorDescription(
@@ -601,7 +635,7 @@ enum NetworkPrivacySanitizer {
             quoted(linkHeaderShape(value))
         default:
             if value.contains("://") || value.contains("?") {
-                quotedURLShape(from: value)
+                "<redacted>"
             } else {
                 escape(value)
             }
