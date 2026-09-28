@@ -30,7 +30,7 @@ public struct NetworkLogger: Sendable {
 
         /// Additional HTTP field names whose values are redacted case-insensitively.
         ///
-        /// Authorization, Cookie, and Set-Cookie are always redacted and cannot be removed.
+        /// Authorization, Proxy-Authorization, Cookie, and Set-Cookie are always redacted and cannot be removed.
         public let additionalSensitiveHeaders: Set<String>
 
         /// The opt-in policy for rendering retained response body bytes.
@@ -323,7 +323,7 @@ package struct NetworkLoggerFormatter: Sendable {
 
 /// Shared privacy rules for logger records and library-owned error descriptions.
 enum NetworkPrivacySanitizer {
-    static let mandatorySensitiveHeaderNames: Set = ["authorization", "cookie", "set-cookie"]
+    static let mandatorySensitiveHeaderNames: Set = ["authorization", "cookie", "proxy-authorization", "set-cookie"]
 
     static func requestURLShape(_ request: HTTPRequest) -> String {
         guard let path = request.path else {
@@ -382,32 +382,110 @@ enum NetworkPrivacySanitizer {
 
     static func bodyDescription(_ body: RetainedBody, maximumBytes: UInt) -> String {
         let maximumCount = maximumBytes > UInt(Int.max) ? Int.max : Int(maximumBytes)
-        let cappedCount = min(body.data.count, maximumCount)
-        let cappedData = Data(body.data.prefix(cappedCount))
-        let originalWasUTF8 = String(data: body.data, encoding: .utf8)
-        let isTruncated = body.isTruncated || cappedCount < body.data.count
+        let retainedCount = body.data.count
+        let cappedCount = min(retainedCount, maximumCount)
+        let wasTruncated = body.isTruncated || cappedCount < retainedCount
 
-        guard originalWasUTF8 != nil else {
-            return "body=binary retained_bytes=\(body.data.count) original_bytes=\(body.originalByteCount) truncated=\(isTruncated)"
+        guard maximumCount > 0 else {
+            return [
+                "body=omitted",
+                "emitted_bytes=0",
+                "retained_bytes=\(retainedCount)",
+                "original_bytes=\(body.originalByteCount)",
+                "truncated=\(wasTruncated)",
+            ].joined(separator: " ")
+        }
+        guard let validByteCount = validUTF8PrefixByteCount(
+            in: body.data,
+            maximumCount: cappedCount,
+            retainedBodyIsTruncated: body.isTruncated,
+        ) else {
+            return "body=binary retained_bytes=\(retainedCount) original_bytes=\(body.originalByteCount) truncated=\(wasTruncated)"
         }
 
-        var validCount = cappedData.count
-        var text = String(data: cappedData, encoding: .utf8)
-        while text == nil, validCount > 0 {
-            validCount -= 1
-            text = String(data: body.data.prefix(validCount), encoding: .utf8)
-        }
-        let emittedText = text ?? ""
-        let didTrimScalar = validCount < cappedCount
-        let truncated = isTruncated || didTrimScalar
+        let emittedText = String(decoding: body.data.prefix(validByteCount), as: UTF8.self)
+        let didTrimScalar = validByteCount < cappedCount
+        let truncated = wasTruncated || didTrimScalar
         return [
             "body=text",
             "content=\(escape(emittedText))",
-            "emitted_bytes=\(validCount)",
-            "retained_bytes=\(body.data.count)",
+            "emitted_bytes=\(validByteCount)",
+            "retained_bytes=\(retainedCount)",
             "original_bytes=\(body.originalByteCount)",
             "truncated=\(truncated)",
         ].joined(separator: " ")
+    }
+
+    /// Validates only the capped prefix plus at most three continuation bytes. A truncated retained
+    /// body may end at an incomplete scalar, but malformed continuation bytes still fail.
+    private static func validUTF8PrefixByteCount(
+        in data: Data,
+        maximumCount: Int,
+        retainedBodyIsTruncated: Bool,
+    ) -> Int? {
+        var index = 0
+
+        while index < maximumCount {
+            let firstByte = data[index]
+            if firstByte <= 0x7f {
+                index += 1
+                continue
+            }
+
+            let sequenceLength: Int
+            let secondByteMinimum: UInt8
+            let secondByteMaximum: UInt8
+            switch firstByte {
+            case 0xc2 ... 0xdf:
+                sequenceLength = 2
+                secondByteMinimum = 0x80
+                secondByteMaximum = 0xbf
+            case 0xe0 ... 0xef:
+                sequenceLength = 3
+                secondByteMinimum = firstByte == 0xe0 ? 0xa0 : 0x80
+                secondByteMaximum = firstByte == 0xed ? 0x9f : 0xbf
+            case 0xf0 ... 0xf4:
+                sequenceLength = 4
+                secondByteMinimum = firstByte == 0xf0 ? 0x90 : 0x80
+                secondByteMaximum = firstByte == 0xf4 ? 0x8f : 0xbf
+            default:
+                return nil
+            }
+
+            let bytesAvailableInBody = data.count - index
+            if bytesAvailableInBody < sequenceLength {
+                guard retainedBodyIsTruncated else {
+                    return nil
+                }
+
+                for offset in 1 ..< bytesAvailableInBody {
+                    let byte = data[index + offset]
+                    let minimum = offset == 1 ? secondByteMinimum : 0x80
+                    let maximum = offset == 1 ? secondByteMaximum : 0xbf
+                    guard byte >= minimum, byte <= maximum else {
+                        return nil
+                    }
+                }
+                return index
+            }
+
+            let bytesRemainingInPrefix = maximumCount - index
+            for offset in 1 ..< sequenceLength {
+                let byte = data[index + offset]
+                let minimum = offset == 1 ? secondByteMinimum : 0x80
+                let maximum = offset == 1 ? secondByteMaximum : 0xbf
+                guard byte >= minimum, byte <= maximum else {
+                    return nil
+                }
+            }
+
+            if bytesRemainingInPrefix < sequenceLength {
+                return index
+            }
+            index += sequenceLength
+        }
+
+        return maximumCount
     }
 
     static func responseValidationErrorDescription(

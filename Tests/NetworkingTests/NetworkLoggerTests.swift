@@ -197,6 +197,47 @@ struct NetworkLoggerTests {
         #expect(!message.contains("API-KEY-SECRET"))
     }
 
+    @Test("Proxy-Authorization credentials are redacted by default")
+    func proxyAuthorizationIsMandatorySensitiveByDefault() throws {
+        let proxyAuthorizationName = try #require(
+            HTTPField.Name("Proxy-Authorization"),
+            "The test header names must be valid",
+        )
+        let extraSecretName = try #require(HTTPField.Name("X-Extra-Secret"), "The test header names must be valid")
+
+        var headers = HTTPFields()
+        headers[proxyAuthorizationName] = "Basic PROXY-AUTH-SECRET"
+        headers[extraSecretName] = "CALLER-CONFIG-SECRET"
+        let request = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "proxy.example",
+            path: "/resource",
+            headerFields: headers,
+        )
+        let event = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: request,
+        ))
+
+        let defaultMessage = NetworkLoggerFormatter(configuration: .init()).format(event).message
+        let configuredMessage = NetworkLoggerFormatter(configuration: .init(
+            additionalSensitiveHeaders: ["x-extra-secret"],
+        ))
+        .format(event)
+        .message
+
+        #expect(defaultMessage.contains("proxy-authorization=<redacted>"))
+        #expect(!defaultMessage.contains("PROXY-AUTH-SECRET"))
+        #expect(configuredMessage.contains("proxy-authorization=<redacted>"))
+        #expect(configuredMessage.contains("x-extra-secret=<redacted>"))
+        #expect(!configuredMessage.contains("PROXY-AUTH-SECRET"))
+        #expect(!configuredMessage.contains("CALLER-CONFIG-SECRET"))
+    }
+
     @Test("Sensitive header names are matched case-insensitively")
     func sensitiveHeaderNamesAreMatchedCaseInsensitively() {
         var headers = HTTPFields()
@@ -369,18 +410,19 @@ struct NetworkLoggerTests {
 
     @Test("Opt-in UTF-8 diagnostics respect the cap and trim at a scalar boundary")
     func byteCappedTextKeepsValidUTF8Prefix() {
-        let original = Data("A🦄B".utf8)
+        let original = Data("A🦄".utf8)
         let error = makeValidationError(
             body: RetainedBody(data: original, originalByteCount: Int64(original.count)),
             reason: nil,
         )
         let formatter = NetworkLoggerFormatter(configuration: .init(
-            bodyDiagnostics: .enabled(maximumBytes: 3),
+            bodyDiagnostics: .enabled(maximumBytes: 2),
         ))
         let message = formatter.format(requestFailedEvent(error: error)).message
 
         #expect(message.contains("body=text"))
-        #expect(message.contains("A"))
+        #expect(message.contains("content=A"))
+        #expect(message.contains("emitted_bytes=1"))
         #expect(message.contains("truncated=true"))
         #expect(!message.contains("🦄"))
         #expect(!message.contains("body=binary"))
@@ -401,6 +443,107 @@ struct NetworkLoggerTests {
         #expect(message.contains("body=binary"))
         #expect(message.contains("retained_bytes=4"))
         #expect(!message.contains("\u{FFFD}"))
+    }
+
+    @Test("A small body cap classifies only its bounded prefix")
+    func largeRetainedBodyUsesOnlyTheConfiguredPrefix() {
+        var bytes = Data("bounded".utf8)
+        bytes.append(contentsOf: repeatElement(UInt8(0xff), count: 2_000_000))
+        let error = makeValidationError(
+            body: RetainedBody(data: bytes, originalByteCount: Int64(bytes.count)),
+            reason: nil,
+        )
+        let formatter = NetworkLoggerFormatter(configuration: .init(
+            bodyDiagnostics: .enabled(maximumBytes: 7),
+        ))
+
+        let message = formatter.format(requestFailedEvent(error: error)).message
+
+        #expect(message.contains("body=text"))
+        #expect(message.contains("content=bounded"))
+        #expect(message.contains("emitted_bytes=7"))
+        #expect(message.contains("retained_bytes=2000007"))
+        #expect(message.contains("truncated=true"))
+    }
+
+    @Test("Invalid UTF-8 inside the bounded prefix remains structural")
+    func invalidUTF8WithinCappedPrefixRemainsBinary() {
+        let bytes = Data([0x41, 0xff, 0x42])
+        let error = makeValidationError(
+            body: RetainedBody(data: bytes, originalByteCount: Int64(bytes.count)),
+            reason: nil,
+        )
+        let formatter = NetworkLoggerFormatter(configuration: .init(
+            bodyDiagnostics: .enabled(maximumBytes: 3),
+        ))
+
+        let message = formatter.format(requestFailedEvent(error: error)).message
+
+        #expect(message.contains("body=binary"))
+        #expect(!message.contains("body=text"))
+        #expect(!message.contains("content=A"))
+        #expect(!message.contains("content=B"))
+    }
+
+    @Test("An incomplete UTF-8 scalar at the cap remains structural")
+    func incompleteUTF8AtCapRemainsBinary() {
+        let bytes = Data([0x41, 0xf0, 0x90])
+        let error = makeValidationError(
+            body: RetainedBody(data: bytes, originalByteCount: Int64(bytes.count)),
+            reason: nil,
+        )
+        let formatter = NetworkLoggerFormatter(configuration: .init(
+            bodyDiagnostics: .enabled(maximumBytes: 2),
+        ))
+
+        let message = formatter.format(requestFailedEvent(error: error)).message
+
+        #expect(message.contains("body=binary"))
+        #expect(!message.contains("body=text"))
+        #expect(!message.contains("content=A"))
+    }
+
+    @Test("A truncated retained body preserves text before an incomplete scalar")
+    func truncatedRetainedBodyKeepsValidTextPrefix() {
+        let bytes = Data([0x41, 0xf0, 0x90])
+        let error = makeValidationError(
+            body: RetainedBody(data: bytes, originalByteCount: 5),
+            reason: nil,
+        )
+        let formatter = NetworkLoggerFormatter(configuration: .init(
+            bodyDiagnostics: .enabled(maximumBytes: 2),
+        ))
+
+        let message = formatter.format(requestFailedEvent(error: error)).message
+
+        #expect(message.contains("body=text"))
+        #expect(message.contains("content=A"))
+        #expect(message.contains("emitted_bytes=1"))
+        #expect(message.contains("truncated=true"))
+        #expect(!message.contains("body=binary"))
+    }
+
+    @Test("A zero-byte body cap emits metadata without classifying content")
+    func zeroByteBodyCapEmitsMetadataOnly() {
+        let bytes = Data([0xff, 0x00, 0x41])
+        let error = makeValidationError(
+            body: RetainedBody(data: bytes, originalByteCount: Int64(bytes.count)),
+            reason: nil,
+        )
+        let formatter = NetworkLoggerFormatter(configuration: .init(
+            bodyDiagnostics: .enabled(maximumBytes: 0),
+        ))
+
+        let message = formatter.format(requestFailedEvent(error: error)).message
+
+        #expect(message.contains("body=omitted"))
+        #expect(message.contains("retained_bytes=3"))
+        #expect(message.contains("original_bytes=3"))
+        #expect(message.contains("emitted_bytes=0"))
+        #expect(message.contains("truncated=true"))
+        #expect(!message.contains("body=text"))
+        #expect(!message.contains("body=binary"))
+        #expect(!message.contains("content="))
     }
 
     @Test("Unknown errors use structural identity instead of their free-form description")
