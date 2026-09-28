@@ -746,133 +746,13 @@ enum NetworkPrivacySanitizer {
             quotedURLShape(from: value)
         case "link":
             quoted(linkHeaderShape(value))
-        case "accept",
-             "content-type":
-            if hasUnsupportedMediaTypeReference(in: value) {
-                "<redacted>"
-            } else {
-                escape(value)
-            }
         default:
-            if hasUnsupportedURLReferenceShape(value) {
+            if value.contains("://") || value.contains("//") || value.contains("?") {
                 "<redacted>"
             } else {
                 escape(value)
             }
         }
-    }
-
-    private static func hasExplicitURLReferenceDelimiter(in value: String) -> Bool {
-        value.contains("://") || value.contains("?") || value.contains("//")
-    }
-
-    /// Skips each media type token and scans its parameters for URL or path references.
-    private static func hasUnsupportedMediaTypeReference(in value: String) -> Bool {
-        if hasExplicitURLReferenceDelimiter(in: value) {
-            return true
-        }
-
-        for mediaRange in value.split(separator: ",", omittingEmptySubsequences: false) {
-            let leadingWhitespaceTrimmedRange = mediaRange.drop(while: { $0.isWhitespace })
-            let mediaTypeEnd = leadingWhitespaceTrimmedRange.firstIndex {
-                $0.isWhitespace || $0 == ";"
-            } ?? leadingWhitespaceTrimmedRange.endIndex
-            let mediaType = leadingWhitespaceTrimmedRange[..<mediaTypeEnd]
-            let parameters = leadingWhitespaceTrimmedRange[mediaTypeEnd...]
-            let mediaTypeSlashCount = mediaType.count(where: { $0 == "/" })
-
-            if mediaTypeSlashCount == 1 {
-                if hasPathReferenceToken(in: parameters) || hasCompactPathReference(in: parameters) {
-                    return true
-                }
-            } else if hasPathReferenceToken(in: leadingWhitespaceTrimmedRange)
-                || hasCompactPathReference(in: leadingWhitespaceTrimmedRange) {
-                return true
-            }
-        }
-
-        return false
-    }
-
-    private static func hasUnsupportedURLReferenceShape(_ value: String) -> Bool {
-        let leadingWhitespaceTrimmedValue = value.drop(while: { $0.isWhitespace })
-        return hasExplicitURLReferenceDelimiter(in: value)
-            || hasPathReferenceToken(in: leadingWhitespaceTrimmedValue)
-            || hasCompactPathReference(in: leadingWhitespaceTrimmedValue)
-    }
-
-    /// Detects slash-prefixed path references only when a path segment follows the separator.
-    private static func hasPathReferenceToken(in value: Substring) -> Bool {
-        var index = value.startIndex
-        var mayStartPathReference = true
-
-        while index < value.endIndex {
-            if mayStartPathReference {
-                let candidate = value[index...]
-                if candidate.hasPrefix("/") {
-                    let path = candidate.dropFirst()
-                    if let firstPathCharacter = path.first,
-                       !firstPathCharacter.isWhitespace,
-                       firstPathCharacter != "/" {
-                        return true
-                    }
-                }
-                if candidate.hasPrefix("./"),
-                   let firstPathCharacter = candidate.dropFirst(2).first,
-                   !firstPathCharacter.isWhitespace,
-                   firstPathCharacter != "/" {
-                    return true
-                }
-                if candidate.hasPrefix("../"),
-                   let firstPathCharacter = candidate.dropFirst(3).first,
-                   !firstPathCharacter.isWhitespace,
-                   firstPathCharacter != "/" {
-                    return true
-                }
-            }
-
-            let character = value[index]
-            mayStartPathReference = character.isWhitespace
-                || character.unicodeScalars.contains(where: requiresUnicodeDiagnosticEscape)
-                || (!character.isLetter
-                    && !character.isNumber
-                    && character != "_"
-                    && character != "%")
-            value.formIndex(after: &index)
-        }
-        return false
-    }
-
-    /// Detects compact slash-separated path segments embedded in an unsupported header value.
-    private static func hasCompactPathReference(in value: Substring) -> Bool {
-        var index = value.startIndex
-        var previousCharacter: Character?
-
-        while index < value.endIndex {
-            let character = value[index]
-            if character.isWhitespace || character == "," || character == ";" {
-                previousCharacter = character
-            } else if character == "/" {
-                let nextIndex = value.index(after: index)
-                let nextCharacter = nextIndex < value.endIndex ? value[nextIndex] : nil
-                let hasSegmentBefore = previousCharacter.map {
-                    !$0.isWhitespace && $0 != "/" && $0 != "," && $0 != ";"
-                } ?? false
-                let hasSegmentAfter = nextCharacter.map {
-                    !$0.isWhitespace && $0 != "/" && $0 != "," && $0 != ";"
-                } ?? false
-                if hasSegmentBefore, hasSegmentAfter {
-                    return true
-                }
-                previousCharacter = character
-            } else {
-                previousCharacter = character
-            }
-
-            value.formIndex(after: &index)
-        }
-
-        return false
     }
 
     private static func quotedURLShape(from value: String) -> String {

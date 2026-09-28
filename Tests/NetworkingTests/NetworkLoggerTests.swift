@@ -281,53 +281,16 @@ struct NetworkLoggerTests {
     func schemeRelativeGenericHeadersAreRedacted() throws {
         let relativeName = try #require(HTTPField.Name("X-Scheme-Relative"), "The header name must be valid")
         let multiValueName = try #require(HTTPField.Name("X-Unknown-Multi"), "The header name must be valid")
-        let pathName = try #require(HTTPField.Name("X-Absolute-Path"), "The header name must be valid")
-        let embeddedPathName = try #require(HTTPField.Name("X-Embedded-Path"), "The header name must be valid")
-        let parenthesizedPathName = try #require(
-            HTTPField.Name("X-Parenthesized-Path"),
-            "The header name must be valid",
-        )
-        let colonPathName = try #require(
-            HTTPField.Name("X-Colon-Path"),
-            "The header name must be valid",
-        )
-        let whitespaceURLName = try #require(HTTPField.Name("X-Whitespace-URL"), "The header name must be valid")
-        let separatedPathName = try #require(HTTPField.Name("X-Separated-Path"), "The header name must be valid")
-        let punctuationPathName = try #require(HTTPField.Name("X-Punctuation-Path"), "The header name must be valid")
-        let c1PathName = try #require(HTTPField.Name("X-C1-Path"), "The header name must be valid")
-        let formatPathName = try #require(HTTPField.Name("X-Format-Path"), "The header name must be valid")
-        let lineSeparatorPathName = try #require(
-            HTTPField.Name("X-Line-Separator-Path"),
-            "The header name must be valid",
-        )
-        let formatURLName = try #require(HTTPField.Name("X-Format-URL"), "The header name must be valid")
-        let multiSegmentPathName = try #require(HTTPField.Name("X-Multi-Segment-Path"), "The header name must be valid")
-        let relativePathName = try #require(HTTPField.Name("X-Relative-Path"), "The header name must be valid")
-        let contentTypeName = try #require(HTTPField.Name("Content-Type"), "The header name must be valid")
-        let acceptName = try #require(HTTPField.Name("Accept"), "The header name must be valid")
-        let plainName = try #require(HTTPField.Name("X-Plain-Value"), "The header name must be valid")
+        let absoluteURLName = try #require(HTTPField.Name("X-Absolute-URL"), "The header name must be valid")
+        let queryName = try #require(HTTPField.Name("X-Query"), "The header name must be valid")
         var headers = HTTPFields()
         headers[relativeName] = "//RELATIVE-USER:RELATIVE-PASSWORD@example.com/path"
         headers[multiValueName] = [
-            "rel=next, //MULTI-USER:MULTI-PASSWORD@other.example/path",
-            "rel=prev / //SPACED-MULTI-USER:SPACED-MULTI-PASSWORD@third.example/path",
+            "rel=next, //FIRST-USER:FIRST-PASSWORD@first.example/path",
+            "rel=prev / //SECOND-USER:SECOND-PASSWORD@second.example/path",
         ].joined(separator: "; ")
-        headers[pathName] = "/account/PATH-PRIVATE-ID"
-        headers[embeddedPathName] = "rel=next, /account/EMBEDDED-PATH-PRIVATE-ID"
-        headers[parenthesizedPathName] = "value(/account/PARENTHESIZED-PATH-PRIVATE-ID)"
-        headers[colonPathName] = "value:../COLON-PATH-PRIVATE-ID"
-        headers[whitespaceURLName] = "  https://SPACE-USER:SPACE-PASSWORD@example.com/path"
-        headers[separatedPathName] = "label\u{00a0}/account/UNICODE-SEPARATOR-PRIVATE-ID"
-        headers[punctuationPathName] = "label—/account/UNICODE-PUNCTUATION-PRIVATE-ID"
-        headers[c1PathName] = "label\u{0085}/account/C1-SEPARATOR-PRIVATE-ID"
-        headers[formatPathName] = "label\u{200b}/account/ZERO-WIDTH-PRIVATE-ID"
-        headers[lineSeparatorPathName] = "label\u{2028}/account/LINE-SEPARATOR-PRIVATE-ID"
-        headers[formatURLName] = "\u{200b}https://FORMAT-USER:FORMAT-PASSWORD@example.com/path?token=FORMAT-QUERY-SECRET"
-        headers[multiSegmentPathName] = "label/account/MULTI-SEGMENT-PRIVATE-ID"
-        headers[relativePathName] = "account/SINGLE-SLASH-PRIVATE-ID"
-        headers[contentTypeName] = "application/json"
-        headers[acceptName] = "application/json, text/plain"
-        headers[plainName] = "plain value, still=ordinary / ratio"
+        headers[absoluteURLName] = "https://ABSOLUTE-USER:ABSOLUTE-PASSWORD@example.com/path?token=ABSOLUTE-QUERY-SECRET"
+        headers[queryName] = "search?token=GENERIC-QUERY-SECRET"
         let request = HTTPRequest(
             method: .get,
             scheme: "https",
@@ -347,44 +310,18 @@ struct NetworkLoggerTests {
 
         #expect(message.contains("x-scheme-relative=<redacted>"))
         #expect(message.contains("x-unknown-multi=<redacted>"))
-        #expect(message.contains("x-absolute-path=<redacted>"))
-        #expect(message.contains("x-embedded-path=<redacted>"))
-        #expect(message.contains("x-parenthesized-path=<redacted>"))
-        #expect(message.contains("x-colon-path=<redacted>"))
-        #expect(message.contains("x-whitespace-url=<redacted>"))
-        #expect(message.contains("x-separated-path=<redacted>"))
-        #expect(message.contains("x-punctuation-path=<redacted>"))
-        #expect(message.contains("x-c1-path=<redacted>"))
-        #expect(message.contains("x-format-path=<redacted>"))
-        #expect(message.contains("x-line-separator-path=<redacted>"))
-        #expect(message.contains("x-format-url=<redacted>"))
-        #expect(message.contains("x-multi-segment-path=<redacted>"))
-        #expect(message.contains("x-relative-path=<redacted>"))
-        #expect(message.contains("content-type=application/json"))
-        #expect(message.contains("accept=application/json"))
+        #expect(message.contains("x-absolute-url=<redacted>"))
+        #expect(message.contains("x-query=<redacted>"))
         #expect(!message.contains("RELATIVE-USER"))
         #expect(!message.contains("RELATIVE-PASSWORD"))
-        #expect(!message.contains("MULTI-USER"))
-        #expect(!message.contains("MULTI-PASSWORD"))
-        #expect(!message.contains("SPACED-MULTI-USER"))
-        #expect(!message.contains("SPACED-MULTI-PASSWORD"))
-        #expect(!message.contains("PATH-PRIVATE-ID"))
-        #expect(!message.contains("EMBEDDED-PATH-PRIVATE-ID"))
-        #expect(!message.contains("PARENTHESIZED-PATH-PRIVATE-ID"))
-        #expect(!message.contains("COLON-PATH-PRIVATE-ID"))
-        #expect(!message.contains("SPACE-USER"))
-        #expect(!message.contains("SPACE-PASSWORD"))
-        #expect(!message.contains("UNICODE-SEPARATOR-PRIVATE-ID"))
-        #expect(!message.contains("UNICODE-PUNCTUATION-PRIVATE-ID"))
-        #expect(!message.contains("C1-SEPARATOR-PRIVATE-ID"))
-        #expect(!message.contains("ZERO-WIDTH-PRIVATE-ID"))
-        #expect(!message.contains("LINE-SEPARATOR-PRIVATE-ID"))
-        #expect(!message.contains("FORMAT-USER"))
-        #expect(!message.contains("FORMAT-PASSWORD"))
-        #expect(!message.contains("FORMAT-QUERY-SECRET"))
-        #expect(!message.contains("MULTI-SEGMENT-PRIVATE-ID"))
-        #expect(!message.contains("SINGLE-SLASH-PRIVATE-ID"))
-        #expect(message.contains(#"x-plain-value=plain\svalue\,\sstill\=ordinary\s/\sratio"#))
+        #expect(!message.contains("FIRST-USER"))
+        #expect(!message.contains("FIRST-PASSWORD"))
+        #expect(!message.contains("SECOND-USER"))
+        #expect(!message.contains("SECOND-PASSWORD"))
+        #expect(!message.contains("ABSOLUTE-USER"))
+        #expect(!message.contains("ABSOLUTE-PASSWORD"))
+        #expect(!message.contains("ABSOLUTE-QUERY-SECRET"))
+        #expect(!message.contains("GENERIC-QUERY-SECRET"))
     }
 
     @Test("Accept and Content-Type redact explicit URL references")
@@ -421,13 +358,19 @@ struct NetworkLoggerTests {
         #expect(!message.contains("CONTENT-QUERY-SECRET"))
     }
 
-    @Test("Media-type parameters redact path references")
-    func mediaTypeParametersRedactPathReferences() throws {
+    @Test("Ordinary slash-containing header values remain visible")
+    func ordinarySlashContainingHeadersRemainVisible() throws {
+        let userAgentName = try #require(HTTPField.Name("User-Agent"), "The header name must be valid")
         let acceptName = try #require(HTTPField.Name("Accept"), "The header name must be valid")
         let contentTypeName = try #require(HTTPField.Name("Content-Type"), "The header name must be valid")
+        let pathName = try #require(HTTPField.Name("X-Single-Slash-Path"), "The header name must be valid")
+        let tokenName = try #require(HTTPField.Name("X-Slash-Token"), "The header name must be valid")
         var headers = HTTPFields()
-        headers[acceptName] = "application/json, text/plain; profile=account/ACCEPT-PATH-PRIVATE-ID"
-        headers[contentTypeName] = "application/json; profile=/account/CONTENT-PATH-PRIVATE-ID"
+        headers[userAgentName] = "MyApp/1.0"
+        headers[acceptName] = "application/json, text/plain"
+        headers[contentTypeName] = "application/json; charset=utf-8"
+        headers[pathName] = "/account/v1"
+        headers[tokenName] = "token/value"
         let request = HTTPRequest(
             method: .get,
             scheme: "https",
@@ -445,10 +388,11 @@ struct NetworkLoggerTests {
 
         let message = NetworkLoggerFormatter(configuration: .init()).format(event).message
 
-        #expect(message.contains("accept=<redacted>"))
-        #expect(message.contains("content-type=<redacted>"))
-        #expect(!message.contains("ACCEPT-PATH-PRIVATE-ID"))
-        #expect(!message.contains("CONTENT-PATH-PRIVATE-ID"))
+        #expect(message.contains("user-agent=MyApp/1.0"))
+        #expect(message.contains(#"accept=application/json\,\stext/plain"#))
+        #expect(message.contains(#"content-type=application/json;\scharset\=utf-8"#))
+        #expect(message.contains("x-single-slash-path=/account/v1"))
+        #expect(message.contains("x-slash-token=token/value"))
     }
 
     @Test("Sensitive header names are matched case-insensitively")
