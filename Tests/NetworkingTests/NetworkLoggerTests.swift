@@ -277,6 +277,180 @@ struct NetworkLoggerTests {
         #expect(!message.contains("LINK-QUERY-SECRET"))
     }
 
+    @Test("Scheme-relative references are redacted from generic headers")
+    func schemeRelativeGenericHeadersAreRedacted() throws {
+        let relativeName = try #require(HTTPField.Name("X-Scheme-Relative"), "The header name must be valid")
+        let multiValueName = try #require(HTTPField.Name("X-Unknown-Multi"), "The header name must be valid")
+        let pathName = try #require(HTTPField.Name("X-Absolute-Path"), "The header name must be valid")
+        let embeddedPathName = try #require(HTTPField.Name("X-Embedded-Path"), "The header name must be valid")
+        let parenthesizedPathName = try #require(
+            HTTPField.Name("X-Parenthesized-Path"),
+            "The header name must be valid",
+        )
+        let colonPathName = try #require(
+            HTTPField.Name("X-Colon-Path"),
+            "The header name must be valid",
+        )
+        let whitespaceURLName = try #require(HTTPField.Name("X-Whitespace-URL"), "The header name must be valid")
+        let separatedPathName = try #require(HTTPField.Name("X-Separated-Path"), "The header name must be valid")
+        let punctuationPathName = try #require(HTTPField.Name("X-Punctuation-Path"), "The header name must be valid")
+        let c1PathName = try #require(HTTPField.Name("X-C1-Path"), "The header name must be valid")
+        let formatPathName = try #require(HTTPField.Name("X-Format-Path"), "The header name must be valid")
+        let lineSeparatorPathName = try #require(
+            HTTPField.Name("X-Line-Separator-Path"),
+            "The header name must be valid",
+        )
+        let formatURLName = try #require(HTTPField.Name("X-Format-URL"), "The header name must be valid")
+        let multiSegmentPathName = try #require(HTTPField.Name("X-Multi-Segment-Path"), "The header name must be valid")
+        let relativePathName = try #require(HTTPField.Name("X-Relative-Path"), "The header name must be valid")
+        let contentTypeName = try #require(HTTPField.Name("Content-Type"), "The header name must be valid")
+        let acceptName = try #require(HTTPField.Name("Accept"), "The header name must be valid")
+        let plainName = try #require(HTTPField.Name("X-Plain-Value"), "The header name must be valid")
+        var headers = HTTPFields()
+        headers[relativeName] = "//RELATIVE-USER:RELATIVE-PASSWORD@example.com/path"
+        headers[multiValueName] = [
+            "rel=next, //MULTI-USER:MULTI-PASSWORD@other.example/path",
+            "rel=prev / //SPACED-MULTI-USER:SPACED-MULTI-PASSWORD@third.example/path",
+        ].joined(separator: "; ")
+        headers[pathName] = "/account/PATH-PRIVATE-ID"
+        headers[embeddedPathName] = "rel=next, /account/EMBEDDED-PATH-PRIVATE-ID"
+        headers[parenthesizedPathName] = "value(/account/PARENTHESIZED-PATH-PRIVATE-ID)"
+        headers[colonPathName] = "value:../COLON-PATH-PRIVATE-ID"
+        headers[whitespaceURLName] = "  https://SPACE-USER:SPACE-PASSWORD@example.com/path"
+        headers[separatedPathName] = "label\u{00a0}/account/UNICODE-SEPARATOR-PRIVATE-ID"
+        headers[punctuationPathName] = "label—/account/UNICODE-PUNCTUATION-PRIVATE-ID"
+        headers[c1PathName] = "label\u{0085}/account/C1-SEPARATOR-PRIVATE-ID"
+        headers[formatPathName] = "label\u{200b}/account/ZERO-WIDTH-PRIVATE-ID"
+        headers[lineSeparatorPathName] = "label\u{2028}/account/LINE-SEPARATOR-PRIVATE-ID"
+        headers[formatURLName] = "\u{200b}https://FORMAT-USER:FORMAT-PASSWORD@example.com/path?token=FORMAT-QUERY-SECRET"
+        headers[multiSegmentPathName] = "label/account/MULTI-SEGMENT-PRIVATE-ID"
+        headers[relativePathName] = "account/SINGLE-SLASH-PRIVATE-ID"
+        headers[contentTypeName] = "application/json"
+        headers[acceptName] = "application/json, text/plain"
+        headers[plainName] = "plain value, still=ordinary / ratio"
+        let request = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "example.com",
+            path: "/resource",
+            headerFields: headers,
+        )
+        let event = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: request,
+        ))
+
+        let message = NetworkLoggerFormatter(configuration: .init()).format(event).message
+
+        #expect(message.contains("x-scheme-relative=<redacted>"))
+        #expect(message.contains("x-unknown-multi=<redacted>"))
+        #expect(message.contains("x-absolute-path=<redacted>"))
+        #expect(message.contains("x-embedded-path=<redacted>"))
+        #expect(message.contains("x-parenthesized-path=<redacted>"))
+        #expect(message.contains("x-colon-path=<redacted>"))
+        #expect(message.contains("x-whitespace-url=<redacted>"))
+        #expect(message.contains("x-separated-path=<redacted>"))
+        #expect(message.contains("x-punctuation-path=<redacted>"))
+        #expect(message.contains("x-c1-path=<redacted>"))
+        #expect(message.contains("x-format-path=<redacted>"))
+        #expect(message.contains("x-line-separator-path=<redacted>"))
+        #expect(message.contains("x-format-url=<redacted>"))
+        #expect(message.contains("x-multi-segment-path=<redacted>"))
+        #expect(message.contains("x-relative-path=<redacted>"))
+        #expect(message.contains("content-type=application/json"))
+        #expect(message.contains("accept=application/json"))
+        #expect(!message.contains("RELATIVE-USER"))
+        #expect(!message.contains("RELATIVE-PASSWORD"))
+        #expect(!message.contains("MULTI-USER"))
+        #expect(!message.contains("MULTI-PASSWORD"))
+        #expect(!message.contains("SPACED-MULTI-USER"))
+        #expect(!message.contains("SPACED-MULTI-PASSWORD"))
+        #expect(!message.contains("PATH-PRIVATE-ID"))
+        #expect(!message.contains("EMBEDDED-PATH-PRIVATE-ID"))
+        #expect(!message.contains("PARENTHESIZED-PATH-PRIVATE-ID"))
+        #expect(!message.contains("COLON-PATH-PRIVATE-ID"))
+        #expect(!message.contains("SPACE-USER"))
+        #expect(!message.contains("SPACE-PASSWORD"))
+        #expect(!message.contains("UNICODE-SEPARATOR-PRIVATE-ID"))
+        #expect(!message.contains("UNICODE-PUNCTUATION-PRIVATE-ID"))
+        #expect(!message.contains("C1-SEPARATOR-PRIVATE-ID"))
+        #expect(!message.contains("ZERO-WIDTH-PRIVATE-ID"))
+        #expect(!message.contains("LINE-SEPARATOR-PRIVATE-ID"))
+        #expect(!message.contains("FORMAT-USER"))
+        #expect(!message.contains("FORMAT-PASSWORD"))
+        #expect(!message.contains("FORMAT-QUERY-SECRET"))
+        #expect(!message.contains("MULTI-SEGMENT-PRIVATE-ID"))
+        #expect(!message.contains("SINGLE-SLASH-PRIVATE-ID"))
+        #expect(message.contains(#"x-plain-value=plain\svalue\,\sstill\=ordinary\s/\sratio"#))
+    }
+
+    @Test("Accept and Content-Type redact explicit URL references")
+    func mediaTypeHeadersRedactExplicitURLReferences() throws {
+        let acceptName = try #require(HTTPField.Name("Accept"), "The header name must be valid")
+        let contentTypeName = try #require(HTTPField.Name("Content-Type"), "The header name must be valid")
+        var headers = HTTPFields()
+        headers[acceptName] = "application/json, https://ACCEPT-USER:ACCEPT-PASSWORD@example.com/path?token=ACCEPT-QUERY-SECRET"
+        headers[contentTypeName] = "https://CONTENT-USER:CONTENT-PASSWORD@example.com/path?token=CONTENT-QUERY-SECRET"
+        let request = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "example.com",
+            path: "/resource",
+            headerFields: headers,
+        )
+        let event = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: request,
+        ))
+
+        let message = NetworkLoggerFormatter(configuration: .init()).format(event).message
+
+        #expect(message.contains("accept=<redacted>"))
+        #expect(message.contains("content-type=<redacted>"))
+        #expect(!message.contains("ACCEPT-USER"))
+        #expect(!message.contains("ACCEPT-PASSWORD"))
+        #expect(!message.contains("ACCEPT-QUERY-SECRET"))
+        #expect(!message.contains("CONTENT-USER"))
+        #expect(!message.contains("CONTENT-PASSWORD"))
+        #expect(!message.contains("CONTENT-QUERY-SECRET"))
+    }
+
+    @Test("Media-type parameters redact path references")
+    func mediaTypeParametersRedactPathReferences() throws {
+        let acceptName = try #require(HTTPField.Name("Accept"), "The header name must be valid")
+        let contentTypeName = try #require(HTTPField.Name("Content-Type"), "The header name must be valid")
+        var headers = HTTPFields()
+        headers[acceptName] = "application/json, text/plain; profile=account/ACCEPT-PATH-PRIVATE-ID"
+        headers[contentTypeName] = "application/json; profile=/account/CONTENT-PATH-PRIVATE-ID"
+        let request = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "example.com",
+            path: "/resource",
+            headerFields: headers,
+        )
+        let event = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: request,
+        ))
+
+        let message = NetworkLoggerFormatter(configuration: .init()).format(event).message
+
+        #expect(message.contains("accept=<redacted>"))
+        #expect(message.contains("content-type=<redacted>"))
+        #expect(!message.contains("ACCEPT-PATH-PRIVATE-ID"))
+        #expect(!message.contains("CONTENT-PATH-PRIVATE-ID"))
+    }
+
     @Test("Sensitive header names are matched case-insensitively")
     func sensitiveHeaderNamesAreMatchedCaseInsensitively() {
         var headers = HTTPFields()
@@ -317,6 +491,68 @@ struct NetworkLoggerTests {
         #expect(message.contains("accept=\(escapedValue)"))
         #expect(message.contains("=\(escapedValue)]"))
         #expect(!message.contains(unsafeValue))
+    }
+
+    @Test("Unicode controls and separators are escaped across diagnostic surfaces")
+    func unicodeControlsAndSeparatorsAreEscaped() throws {
+        let unicodeText = "café\u{00a0} 🦄\u{2028}\u{2029}\u{202e}"
+        let escapedUnicodeText = #"café\u{A0}\s🦄\u{2028}\u{2029}\u{202E}"#
+        let headerText = unicodeText + "\u{0085}\u{200b}"
+        let escapedHeaderText = escapedUnicodeText + #"\u{85}\u{200B}"#
+        let bodyText = unicodeText + "\t\n\r"
+        let escapedBodyText = escapedUnicodeText + "\\t\\n\\r"
+        let contextValue = "\u{0001}" + bodyText
+        let escapedContextValue = "\\u{1}" + escapedBodyText
+
+        let bodyBytes = Data(bodyText.utf8)
+        let error = makeValidationError(
+            body: RetainedBody(data: bodyBytes, originalByteCount: Int64(bodyBytes.count)),
+            reason: nil,
+        )
+        let bodyFormatter = NetworkLoggerFormatter(configuration: .init(
+            bodyDiagnostics: .enabled(maximumBytes: UInt(bodyBytes.count)),
+        ))
+        let bodyMessage = bodyFormatter.format(requestFailedEvent(error: error)).message
+
+        let descriptionName = try #require(HTTPField.Name("X-Description"), "The header name must be valid")
+        let locationName = try #require(HTTPField.Name("Location"), "The header name must be valid")
+        var headers = HTTPFields()
+        headers[descriptionName] = headerText
+        headers[locationName] = "https://example.com/path\u{2028}segment"
+        let request = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "example.com",
+            path: "/resource",
+            headerFields: headers,
+        )
+        let context = RequestContext().setting(TraceContextKey.self, value: contextValue)
+        let contextEvent = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: context,
+            attemptNumber: 1,
+            request: request,
+        ))
+        let diagnosticMessage = NetworkLoggerFormatter(configuration: .init()).format(contextEvent).message
+
+        #expect(bodyMessage.contains("body=text"))
+        #expect(bodyMessage.contains("content=\(escapedBodyText)"))
+        #expect(diagnosticMessage.contains("x-description=\(escapedHeaderText)"))
+        #expect(diagnosticMessage.contains(escapedContextValue))
+        #expect(diagnosticMessage.contains(#"café\u{A0}\s🦄"#))
+        #expect(diagnosticMessage.contains(#"location="https://example.com/path%E2%80%A8segment""#))
+        #expect(!bodyMessage.contains("\u{2028}"))
+        #expect(!bodyMessage.contains("\u{2029}"))
+        #expect(!bodyMessage.contains("\u{202e}"))
+        #expect(!bodyMessage.contains("\u{00a0}"))
+        #expect(!diagnosticMessage.contains("\u{0001}"))
+        #expect(!diagnosticMessage.contains("\u{2028}"))
+        #expect(!diagnosticMessage.contains("\u{2029}"))
+        #expect(!diagnosticMessage.contains("\u{202e}"))
+        #expect(!diagnosticMessage.contains("\u{00a0}"))
+        #expect(!diagnosticMessage.contains("\u{0085}"))
+        #expect(!diagnosticMessage.contains("\u{200b}"))
     }
 
     @Test("Query names cannot inject diagnostic delimiters")
@@ -654,6 +890,82 @@ struct NetworkLoggerTests {
         #expect(diagnostic.message.contains("TestSecretError"))
         #expect(!diagnostic.message.contains("ARBITRARY-ERROR-SECRET"))
         #expect(diagnostic.level == .error)
+    }
+
+    @Test("Structural error identities do not use custom error descriptions")
+    func structuralErrorIdentityIgnoresCustomDescription() {
+        struct CustomDescriptionError: Error, CustomStringConvertible {
+            var description: String {
+                "CUSTOM-ERROR-DESCRIPTION-SECRET"
+            }
+        }
+
+        let message = NetworkLoggerFormatter(configuration: .init())
+            .format(requestFailedEvent(error: CustomDescriptionError()))
+            .message
+
+        #expect(message.contains("CustomDescriptionError"))
+        #expect(!message.contains("CUSTOM-ERROR-DESCRIPTION-SECRET"))
+    }
+
+    @Test("Function-local error identities omit runtime addresses")
+    func functionLocalErrorIdentityIsStableAndAddressFree() {
+        struct FunctionLocalDiagnosticError: Error {}
+
+        let event = requestFailedEvent(error: FunctionLocalDiagnosticError())
+        let formatter = NetworkLoggerFormatter(configuration: .init())
+        let firstMessage = formatter.format(event).message
+        let secondMessage = formatter.format(event).message
+
+        #expect(firstMessage == secondMessage)
+        #expect(firstMessage.contains("FunctionLocalDiagnosticError"))
+        #expect(!firstMessage.contains("NetworkLoggerTests."))
+        #expect(firstMessage.contains("domain=<redacted>"))
+        #expect(firstMessage.contains("code="))
+        #expect(!firstMessage.contains("unknown context at $"))
+        #expect(!firstMessage.contains("context at"))
+        #expect(!firstMessage.contains("$"))
+        #expect(!firstMessage.contains("0x"))
+    }
+
+    @Test("Function-local generic error identities remain stable and address-free")
+    func functionLocalGenericErrorIdentityIsStableAndAddressFree() {
+        struct FunctionLocalGenericDiagnosticError<Context>: Error {}
+        enum TypeNamespace {
+            struct Detail {}
+        }
+
+        let error = FunctionLocalGenericDiagnosticError<TypeNamespace.Detail>()
+        let event = requestFailedEvent(error: error)
+        let formatter = NetworkLoggerFormatter(configuration: .init())
+        let firstMessage = formatter.format(event).message
+        let secondMessage = formatter.format(event).message
+
+        #expect(firstMessage == secondMessage)
+        #expect(firstMessage.contains("FunctionLocalGenericDiagnosticError"))
+        #expect(!firstMessage.contains("TypeNamespace.Detail"))
+        #expect(!firstMessage.contains("unknown context at $"))
+        #expect(!firstMessage.contains("$"))
+        #expect(!firstMessage.contains("0x"))
+    }
+
+    @Test("Generic error identities retain the outer nominal type")
+    func genericErrorIdentityOmitsTypeArguments() {
+        struct GenericDiagnosticError<Context>: Error {}
+        enum TypeNamespace {
+            struct Detail {}
+        }
+
+        let error = GenericDiagnosticError<TypeNamespace.Detail>()
+        let reflectedTypeName = String(reflecting: Swift.type(of: error))
+        let message = NetworkLoggerFormatter(configuration: .init())
+            .format(requestFailedEvent(error: error))
+            .message
+
+        #expect(reflectedTypeName.contains("TypeNamespace.Detail"))
+        #expect(message.contains("error=GenericDiagnosticError(domain=<redacted>,code="))
+        #expect(!message.contains("TypeNamespace.Detail"))
+        #expect(!message.contains("NetworkingTests."))
     }
 
     @Test("Library-owned localized error descriptions redact header and URL query values")

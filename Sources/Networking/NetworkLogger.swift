@@ -606,13 +606,97 @@ enum NetworkPrivacySanitizer {
     }
 
     static func errorIdentity(_ error: any Error) -> String {
-        let type = String(reflecting: Swift.type(of: error))
+        let type = stableErrorTypeName(for: error)
         let foundationError = error as NSError
         return "\(escape(type))(domain=<redacted>,code=\(foundationError.code))"
     }
 
+    /// Returns one safe nominal type identifier without emitting reflected runtime context.
+    private static func stableErrorTypeName(for error: any Error) -> String {
+        let reflectedTypeName = String(describing: Swift.type(of: error))
+        let contextFreeTypeName = removingRuntimeTypeContextSegments(from: reflectedTypeName)
+        let outerNominalPath = contextFreeTypeName.prefix { $0 != "<" && $0 != "[" && $0 != "(" }
+        let finalComponent = outerNominalPath.split(separator: ".", omittingEmptySubsequences: true).last
+            ?? outerNominalPath[...]
+        let identifierBytes = finalComponent.utf8.prefix { byte in
+            (byte >= 65 && byte <= 90)
+                || (byte >= 97 && byte <= 122)
+                || (byte >= 48 && byte <= 57)
+                || byte == 95
+        }
+        let identifier = String(decoding: identifierBytes, as: UTF8.self)
+        guard let firstByte = identifier.utf8.first,
+              (firstByte >= 65 && firstByte <= 90)
+              || (firstByte >= 97 && firstByte <= 122)
+              || firstByte == 95,
+              identifier.lowercased() != "unknown"
+        else {
+            return "Error"
+        }
+
+        return identifier
+    }
+
+    /// Removes parenthesized compiler context or address segments from a reflected type name.
+    private static func removingRuntimeTypeContextSegments(from value: String) -> String {
+        var result = String()
+        result.reserveCapacity(value.utf8.count)
+        var index = value.startIndex
+
+        while index < value.endIndex {
+            if value[index] == "(" {
+                var contextIndex = index
+                var nestingDepth = 0
+                var contextEnd: String.Index?
+
+                while contextIndex < value.endIndex {
+                    switch value[contextIndex] {
+                    case "(":
+                        nestingDepth += 1
+                    case ")":
+                        nestingDepth -= 1
+                        if nestingDepth == 0 {
+                            contextEnd = contextIndex
+                        }
+                    default:
+                        break
+                    }
+
+                    if contextEnd != nil {
+                        break
+                    }
+                    value.formIndex(after: &contextIndex)
+                }
+
+                guard let contextEnd else {
+                    return ""
+                }
+
+                let contextEndIndex = value.index(after: contextEnd)
+                let contextSegment = value[index ..< contextEndIndex]
+                if isRuntimeTypeContextSegment(contextSegment) {
+                    index = contextEndIndex
+                    continue
+                }
+            }
+
+            result.append(value[index])
+            value.formIndex(after: &index)
+        }
+
+        return result
+    }
+
+    private static func isRuntimeTypeContextSegment(_ value: Substring) -> Bool {
+        let lowercasedValue = value.lowercased()
+        return value.contains("$")
+            || lowercasedValue.contains("0x")
+            || lowercasedValue.contains("context at")
+            || lowercasedValue.contains("function at")
+    }
+
     static func escape(_ value: String) -> String {
-        value
+        let escapedDelimiters = value
             .replacing("\\", with: "\\\\")
             .replacing("\n", with: "\\n")
             .replacing("\r", with: "\\r")
@@ -623,6 +707,35 @@ enum NetworkPrivacySanitizer {
             .replacing(",", with: "\\,")
             .replacing("[", with: "\\[")
             .replacing("]", with: "\\]")
+        return escapeUnicodeControls(in: escapedDelimiters)
+    }
+
+    /// Replaces Unicode controls and separators with visible ASCII escapes.
+    private static func escapeUnicodeControls(in value: String) -> String {
+        var escaped = String()
+        escaped.reserveCapacity(value.utf8.count)
+        for scalar in value.unicodeScalars {
+            if requiresUnicodeDiagnosticEscape(scalar) {
+                let hexadecimalValue = String(scalar.value, radix: 16, uppercase: true)
+                escaped.append(contentsOf: "\\u{\(hexadecimalValue)}")
+            } else {
+                escaped.unicodeScalars.append(scalar)
+            }
+        }
+        return escaped
+    }
+
+    private static func requiresUnicodeDiagnosticEscape(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.properties.generalCategory {
+        case .control,
+             .format,
+             .lineSeparator,
+             .paragraphSeparator,
+             .spaceSeparator:
+            true
+        default:
+            false
+        }
     }
 
     private static func headerValue(_ value: String, name: String) -> String {
@@ -633,13 +746,133 @@ enum NetworkPrivacySanitizer {
             quotedURLShape(from: value)
         case "link":
             quoted(linkHeaderShape(value))
+        case "accept",
+             "content-type":
+            if hasUnsupportedMediaTypeReference(in: value) {
+                "<redacted>"
+            } else {
+                escape(value)
+            }
         default:
-            if value.contains("://") || value.contains("?") {
+            if hasUnsupportedURLReferenceShape(value) {
                 "<redacted>"
             } else {
                 escape(value)
             }
         }
+    }
+
+    private static func hasExplicitURLReferenceDelimiter(in value: String) -> Bool {
+        value.contains("://") || value.contains("?") || value.contains("//")
+    }
+
+    /// Skips each media type token and scans its parameters for URL or path references.
+    private static func hasUnsupportedMediaTypeReference(in value: String) -> Bool {
+        if hasExplicitURLReferenceDelimiter(in: value) {
+            return true
+        }
+
+        for mediaRange in value.split(separator: ",", omittingEmptySubsequences: false) {
+            let leadingWhitespaceTrimmedRange = mediaRange.drop(while: { $0.isWhitespace })
+            let mediaTypeEnd = leadingWhitespaceTrimmedRange.firstIndex {
+                $0.isWhitespace || $0 == ";"
+            } ?? leadingWhitespaceTrimmedRange.endIndex
+            let mediaType = leadingWhitespaceTrimmedRange[..<mediaTypeEnd]
+            let parameters = leadingWhitespaceTrimmedRange[mediaTypeEnd...]
+            let mediaTypeSlashCount = mediaType.count(where: { $0 == "/" })
+
+            if mediaTypeSlashCount == 1 {
+                if hasPathReferenceToken(in: parameters) || hasCompactPathReference(in: parameters) {
+                    return true
+                }
+            } else if hasPathReferenceToken(in: leadingWhitespaceTrimmedRange)
+                || hasCompactPathReference(in: leadingWhitespaceTrimmedRange) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private static func hasUnsupportedURLReferenceShape(_ value: String) -> Bool {
+        let leadingWhitespaceTrimmedValue = value.drop(while: { $0.isWhitespace })
+        return hasExplicitURLReferenceDelimiter(in: value)
+            || hasPathReferenceToken(in: leadingWhitespaceTrimmedValue)
+            || hasCompactPathReference(in: leadingWhitespaceTrimmedValue)
+    }
+
+    /// Detects slash-prefixed path references only when a path segment follows the separator.
+    private static func hasPathReferenceToken(in value: Substring) -> Bool {
+        var index = value.startIndex
+        var mayStartPathReference = true
+
+        while index < value.endIndex {
+            if mayStartPathReference {
+                let candidate = value[index...]
+                if candidate.hasPrefix("/") {
+                    let path = candidate.dropFirst()
+                    if let firstPathCharacter = path.first,
+                       !firstPathCharacter.isWhitespace,
+                       firstPathCharacter != "/" {
+                        return true
+                    }
+                }
+                if candidate.hasPrefix("./"),
+                   let firstPathCharacter = candidate.dropFirst(2).first,
+                   !firstPathCharacter.isWhitespace,
+                   firstPathCharacter != "/" {
+                    return true
+                }
+                if candidate.hasPrefix("../"),
+                   let firstPathCharacter = candidate.dropFirst(3).first,
+                   !firstPathCharacter.isWhitespace,
+                   firstPathCharacter != "/" {
+                    return true
+                }
+            }
+
+            let character = value[index]
+            mayStartPathReference = character.isWhitespace
+                || character.unicodeScalars.contains(where: requiresUnicodeDiagnosticEscape)
+                || (!character.isLetter
+                    && !character.isNumber
+                    && character != "_"
+                    && character != "%")
+            value.formIndex(after: &index)
+        }
+        return false
+    }
+
+    /// Detects compact slash-separated path segments embedded in an unsupported header value.
+    private static func hasCompactPathReference(in value: Substring) -> Bool {
+        var index = value.startIndex
+        var previousCharacter: Character?
+
+        while index < value.endIndex {
+            let character = value[index]
+            if character.isWhitespace || character == "," || character == ";" {
+                previousCharacter = character
+            } else if character == "/" {
+                let nextIndex = value.index(after: index)
+                let nextCharacter = nextIndex < value.endIndex ? value[nextIndex] : nil
+                let hasSegmentBefore = previousCharacter.map {
+                    !$0.isWhitespace && $0 != "/" && $0 != "," && $0 != ";"
+                } ?? false
+                let hasSegmentAfter = nextCharacter.map {
+                    !$0.isWhitespace && $0 != "/" && $0 != "," && $0 != ";"
+                } ?? false
+                if hasSegmentBefore, hasSegmentAfter {
+                    return true
+                }
+                previousCharacter = character
+            } else {
+                previousCharacter = character
+            }
+
+            value.formIndex(after: &index)
+        }
+
+        return false
     }
 
     private static func quotedURLShape(from value: String) -> String {
@@ -653,7 +886,7 @@ enum NetworkPrivacySanitizer {
             .replacing("\n", with: "\\n")
             .replacing("\r", with: "\\r")
             .replacing("\t", with: "\\t")
-        return "\"\(escaped)\""
+        return "\"\(escapeUnicodeControls(in: escaped))\""
     }
 
     private static func linkHeaderShape(_ value: String) -> String {
