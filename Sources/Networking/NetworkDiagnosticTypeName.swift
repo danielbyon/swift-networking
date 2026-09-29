@@ -41,6 +41,56 @@ enum NetworkDiagnosticTypeName {
         return identifiers.joined(separator: ".")
     }
 
+    /// Retains normalized generic arguments for request-context key identity.
+    ///
+    /// Error summaries use `stableName(for:includingNamespace:)` to keep their labels compact. Context keys
+    /// use their generic arguments because distinct specializations may opt in different diagnostic values.
+    static func contextKeyName(for type: Any.Type) -> String {
+        let reflectedTypeName = String(reflecting: type)
+        let contextFreeTypeName = removingRuntimeTypeContextSegments(from: reflectedTypeName)
+        let normalizedName = normalizingContextKeyTypeName(contextFreeTypeName)
+        guard normalizedName.isEmpty == false,
+              normalizedName.contains("$") == false,
+              normalizedName.lowercased().contains("0x") == false
+        else {
+            return stableName(for: type, includingNamespace: true)
+        }
+
+        return normalizedName
+    }
+
+    /// Preserves reflected generic structure while removing unstable context markers and formatting noise.
+    private static func normalizingContextKeyTypeName(_ value: String) -> String {
+        var result = String()
+        result.reserveCapacity(value.utf8.count)
+
+        for character in value {
+            guard character.isWhitespace == false else {
+                continue
+            }
+
+            let isIdentifierCharacter = character.isLetter || character.isNumber || character == "_"
+            let isTypeSyntaxCharacter = "<>,.?&()[]:-!".contains(character)
+            guard isIdentifierCharacter || isTypeSyntaxCharacter else {
+                continue
+            }
+
+            if character == ".",
+               result.isEmpty || result.last == "." || result.last == "<" || result.last == "," {
+                continue
+            }
+            if character == ">", result.last == "." {
+                result.removeLast()
+            }
+            result.append(character)
+        }
+
+        while result.last == "." {
+            result.removeLast()
+        }
+        return result
+    }
+
     /// Removes balanced generic argument lists while retaining nominal components that follow them.
     private static func removingGenericArgumentLists(from value: String) -> String {
         var result = String()

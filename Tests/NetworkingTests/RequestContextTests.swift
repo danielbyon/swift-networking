@@ -56,6 +56,36 @@ struct RequestContextTests {
         ])
     }
 
+    @Test("Diagnostic context keys preserve generic argument identity deterministically")
+    func diagnosticRepresentationDistinguishesGenericKeyArguments() {
+        struct FirstArgument: Sendable {}
+        struct SecondArgument: Sendable {}
+        typealias FirstKey = GenericDiagnosticContextKey<DiagnosticArgumentBox<FirstArgument>>
+        typealias SecondKey = GenericDiagnosticContextKey<DiagnosticArgumentBox<SecondArgument>>
+
+        let context = RequestContext()
+            .setting(FirstKey.self, value: "FIRST-GENERIC-CONTEXT-VALUE")
+            .setting(SecondKey.self, value: "SECOND-GENERIC-CONTEXT-VALUE")
+        let representation = context.diagnosticRepresentation
+        let reversedRepresentation = RequestContext()
+            .setting(SecondKey.self, value: "SECOND-GENERIC-CONTEXT-VALUE")
+            .setting(FirstKey.self, value: "FIRST-GENERIC-CONTEXT-VALUE")
+            .diagnosticRepresentation
+        let names = Array(representation.keys)
+
+        #expect(representation.count == 2)
+        #expect(representation.values.contains("value=FIRST-GENERIC-CONTEXT-VALUE"))
+        #expect(representation.values.contains("value=SECOND-GENERIC-CONTEXT-VALUE"))
+        #expect(names.contains(where: { $0.contains("DiagnosticArgumentBox") && $0.contains("FirstArgument") }))
+        #expect(names.contains(where: { $0.contains("DiagnosticArgumentBox") && $0.contains("SecondArgument") }))
+        #expect(representation == reversedRepresentation)
+        for name in names {
+            #expect(!name.contains("unknown context at $"))
+            #expect(!name.contains("$"))
+            #expect(!name.contains("0x"))
+        }
+    }
+
     private func makeRequest() throws -> Request<Data> {
         let url = try #require(URL(string: "https://example.com/context"))
         let endpoint = Endpoint<Never, Never, Data>.data(
@@ -92,5 +122,15 @@ enum DiagnosticLabelKey: DiagnosticRequestContextKey {
 
     static func diagnosticDescription(for value: String) -> String {
         "label=\(value)"
+    }
+}
+
+private struct DiagnosticArgumentBox<Argument: Sendable>: Sendable {}
+
+private enum GenericDiagnosticContextKey<Argument: Sendable>: DiagnosticRequestContextKey {
+    typealias Value = String
+
+    static func diagnosticDescription(for value: String) -> String {
+        "value=\(value)"
     }
 }

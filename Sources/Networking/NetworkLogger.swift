@@ -708,7 +708,8 @@ enum NetworkPrivacySanitizer {
 
     /// Rejects raw ASCII whitespace/control characters and ambiguous URL references in the path or query names.
     private static func isUnambiguousSingleURLValue(_ value: String, components: URLComponents) -> Bool {
-        guard value.unicodeScalars.contains(where: { $0.value <= 0x20 || $0.value == 0x7f }) == false,
+        guard rawQueryNamesAreWellFormed(in: value),
+              value.unicodeScalars.contains(where: { $0.value <= 0x20 || $0.value == 0x7f }) == false,
               containsEmbeddedURLReference(in: components.path) == false
         else {
             return false
@@ -717,7 +718,7 @@ enum NetworkPrivacySanitizer {
         return queryContainsURLReferenceInName(components.percentEncodedQuery) == false
     }
 
-    /// Detects URL references in query names because the diagnostic renderer preserves those names.
+    /// Detects URL references and malformed encodings in query names before URL values are accepted.
     private static func queryContainsURLReferenceInName(_ query: String?) -> Bool {
         guard let query else {
             return false
@@ -727,12 +728,75 @@ enum NetworkPrivacySanitizer {
             .split(separator: "&", omittingEmptySubsequences: false)
             .contains { pair in
                 let name = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
-                return containsURLReferenceShape(in: name)
+                return isSafeDiagnosticQueryName(name) == false
             }
     }
 
-    private static func containsURLReferenceShape(in queryName: Substring) -> Bool {
-        queryName.contains("://") || queryName.contains("//")
+    /// Decodes bounded nested escapes for classification; safe output retains the original encoded name.
+    private static func isSafeDiagnosticQueryName(_ name: Substring) -> Bool {
+        var encodedForm = String(name)
+        // Redact names that remain encoded after eight passes instead of spending unbounded work on them.
+        for _ in 0 ..< 8 {
+            guard let decodedName = encodedForm.removingPercentEncoding else {
+                return false
+            }
+            guard containsURLReferenceShape(in: decodedName) == false else {
+                return false
+            }
+            guard containsPercentEncodedOctet(in: decodedName) else {
+                return true
+            }
+
+            encodedForm = decodedName
+        }
+
+        return false
+    }
+
+    private static func containsURLReferenceShape(in value: String) -> Bool {
+        value.contains("://") || value.contains("//")
+    }
+
+    private static func containsPercentEncodedOctet(in value: String) -> Bool {
+        let bytes = value.utf8
+        var index = bytes.startIndex
+        while index < bytes.endIndex {
+            if bytes[index] == 0x25 {
+                let firstHexDigit = bytes.index(after: index)
+                if firstHexDigit < bytes.endIndex {
+                    let secondHexDigit = bytes.index(after: firstHexDigit)
+                    if secondHexDigit < bytes.endIndex,
+                       isHexDigit(bytes[firstHexDigit]),
+                       isHexDigit(bytes[secondHexDigit]) {
+                        return true
+                    }
+                }
+            }
+            bytes.formIndex(after: &index)
+        }
+        return false
+    }
+
+    private static func isHexDigit(_ byte: UInt8) -> Bool {
+        (0x30 ... 0x39).contains(byte)
+            || (0x41 ... 0x46).contains(byte)
+            || (0x61 ... 0x66).contains(byte)
+    }
+
+    /// Validates raw query names before URLComponents can normalize malformed percent text as literal data.
+    private static func rawQueryNamesAreWellFormed(in value: String) -> Bool {
+        let withoutFragment = value[..<(value.firstIndex(of: "#") ?? value.endIndex)]
+        guard let queryStart = withoutFragment.firstIndex(of: "?") else {
+            return true
+        }
+
+        let query = withoutFragment[withoutFragment.index(after: queryStart)...]
+        return query
+            .split(separator: "&", omittingEmptySubsequences: false)
+            .allSatisfy { pair in
+                let name = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
+                return String(name).removingPercentEncoding != nil
+            }
     }
 
     private static func containsEmbeddedURLReference(in path: String) -> Bool {
@@ -792,7 +856,9 @@ enum NetworkPrivacySanitizer {
     }
 
     private static func urlShape(from value: String) -> String {
-        guard let components = URLComponents(string: value) else {
+        guard rawQueryNamesAreWellFormed(in: value),
+              let components = URLComponents(string: value)
+        else {
             return "<url-unavailable>"
         }
 
@@ -828,7 +894,7 @@ enum NetworkPrivacySanitizer {
             .lazy
             .map { pair in
                 let name = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
-                let diagnosticName = containsURLReferenceShape(in: name) ? "<redacted>" : diagnosticQueryName(name)
+                let diagnosticName = diagnosticQueryName(name)
                 return "\(diagnosticName)=<redacted>"
             }
             .joined(separator: "&")
@@ -836,7 +902,11 @@ enum NetworkPrivacySanitizer {
     }
 
     private static func diagnosticQueryName(_ name: Substring) -> String {
-        String(name)
+        guard isSafeDiagnosticQueryName(name) else {
+            return "<redacted>"
+        }
+
+        return String(name)
             .replacing(" ", with: "%20")
             .replacing(",", with: "%2C")
             .replacing("[", with: "%5B")

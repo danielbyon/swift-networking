@@ -75,7 +75,7 @@ public struct RequestContext: Sendable {
         updatedEntries[keyIdentifier] = Entry(
             value: value,
             diagnosticKey: diagnosticValue.map { _ in
-                NetworkDiagnosticTypeName.stableName(for: Key.self, includingNamespace: true)
+                NetworkDiagnosticTypeName.contextKeyName(for: Key.self)
             },
             diagnosticValue: diagnosticValue,
         )

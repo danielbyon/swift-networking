@@ -221,6 +221,94 @@ struct NetworkLoggerTests {
         #expect(!message.contains("REQUEST-URL-QUERY-SECRET"))
     }
 
+    @Test("Percent-encoded URL references in query names are redacted everywhere")
+    func percentEncodedURLReferencesInQueryNamesAreRedactedEverywhere() throws {
+        let requestName = [
+            "https%3A%2F%2FREQUEST-NAME-USER%3A",
+            "REQUEST-NAME-PASSWORD%40private.example%2Fpath%3Ftoken%3D",
+            "REQUEST-NESTED-QUERY-SECRET",
+        ].joined()
+        let doubleEncodedRequestName = [
+            "https%253A%252F%252FDOUBLE-ENCODED-USER%253A",
+            "DOUBLE-ENCODED-PASSWORD%2540private.example%252Fpath%253Ftoken%253D",
+            "DOUBLE-ENCODED-NESTED-QUERY-SECRET",
+        ].joined()
+        let headerQueryName = [
+            "https%3A%2F%2FHEADER-NAME-USER%3A",
+            "HEADER-NAME-PASSWORD%40private.example%2Fpath%3Ftoken%3D",
+            "HEADER-NESTED-QUERY-SECRET",
+        ].joined()
+        let linkQueryName = [
+            "https%3A%2F%2FLINK-NAME-USER%3A",
+            "LINK-NAME-PASSWORD%40private.example%2Fpath%3Ftoken%3D",
+            "LINK-NESTED-QUERY-SECRET",
+        ].joined()
+        let locationName = try #require(HTTPField.Name("Location"), "The Location header name must be valid")
+        let linkName = try #require(HTTPField.Name("Link"), "The Link header name must be valid")
+        var headers = HTTPFields()
+        headers[locationName] = "https://redirect.example/next?\(headerQueryName)=header-value"
+        headers[linkName] = "<https://link.example/next?\(linkQueryName)=link-value>; rel=next"
+        let request = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "example.com",
+            path: "/resource?\(requestName)=request-value&\(doubleEncodedRequestName)=double-encoded-request-value",
+            headerFields: headers,
+        )
+        let event = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: request,
+        ))
+
+        let message = NetworkLoggerFormatter(configuration: .init()).format(event).message
+
+        #expect(message.contains("<redacted>=<redacted>"))
+        #expect(message.contains(#"location="<redacted>""#))
+        #expect(message.contains(#"link="<redacted>""#))
+        for secret in [
+            "REQUEST-NAME-USER",
+            "REQUEST-NAME-PASSWORD",
+            "REQUEST-NESTED-QUERY-SECRET",
+            "DOUBLE-ENCODED-USER",
+            "DOUBLE-ENCODED-PASSWORD",
+            "DOUBLE-ENCODED-NESTED-QUERY-SECRET",
+            "HEADER-NAME-USER",
+            "HEADER-NAME-PASSWORD",
+            "HEADER-NESTED-QUERY-SECRET",
+            "LINK-NAME-USER",
+            "LINK-NAME-PASSWORD",
+            "LINK-NESTED-QUERY-SECRET",
+        ] {
+            #expect(!message.contains(secret))
+        }
+    }
+
+    @Test("Malformed percent encoding in a request query name is redacted")
+    func malformedPercentEncodingInQueryNameIsRedacted() {
+        let request = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "example.com",
+            path: "/resource?bad%ZZ-name=MALFORMED-QUERY-NAME-SECRET",
+        )
+        let event = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: request,
+        ))
+
+        let message = NetworkLoggerFormatter(configuration: .init()).format(event).message
+
+        #expect(message.contains("<url-unavailable>"))
+        #expect(!message.contains("bad%ZZ-name"))
+        #expect(!message.contains("MALFORMED-QUERY-NAME-SECRET"))
+    }
+
     @Test("Proxy-Authorization credentials are redacted by default")
     func proxyAuthorizationIsMandatorySensitiveByDefault() throws {
         let proxyAuthorizationName = try #require(
@@ -1132,12 +1220,13 @@ struct NetworkLoggerTests {
 
         let message = NetworkLoggerFormatter(configuration: .init()).format(event).message
 
-        #expect(message.contains("GenericDiagnosticContainer.FirstKey"))
-        #expect(message.contains("GenericDiagnosticContainer.SecondKey"))
+        #expect(message.contains("GenericDiagnosticContainer<"))
+        #expect(message.contains(">.FirstKey"))
+        #expect(message.contains(">.SecondKey"))
         #expect(message.contains(#"first\=SAFE-FIRST-NESTED-VALUE"#))
         #expect(message.contains(#"second\=SAFE-SECOND-NESTED-VALUE"#))
-        #expect(!message.contains("DiagnosticArgumentBox"))
-        #expect(!message.contains("NestedGenericArgument"))
+        #expect(message.contains("DiagnosticArgumentBox"))
+        #expect(message.contains("NestedGenericArgument"))
         #expect(!message.contains("unknown context at $"))
         #expect(!message.contains("$"))
         #expect(!message.contains("0x"))
