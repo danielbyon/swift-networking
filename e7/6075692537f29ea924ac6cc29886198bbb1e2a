@@ -1,0 +1,25 @@
+Tests/NetworkingTests/NetworkLoggerTests.swift
+  s_a7bef8913d80fb::t_52c8fd0ed3edb0 1938-1941,1948,1950,1957,1959,1980-1986,1999-2003,2021-2023
+  s_a7bef8913d80fb::t_d49b9fe70f171f 1866-1867,1888,1890-1918,1927-1935,1937,1942-1943,1945-1947,1949,1958,1960-1971,1973-1978,1987-1989,1991-1995,2007-2014,2017-2020,2024-2028
+  s_a7bef8913d80fb::t_660cdc3e61880e 1889,1936,1944,1972,1979
+  s_a7bef8913d80fb::t_f7caec3e9791e0 1868-1887,1919-1926,1951-1956,1990,1996-1998,2004-2006,2015-2016
+Sources/Networking/NetworkLogger.swift
+  s_a7bef8913d80fb::t_738470d7c3cedb 819,956-957,959-960
+  s_a7bef8913d80fb::t_931608f44583d2 818,958
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e76075692537f29ea924ac6cc29886198bbb1e2a",
+  "prompts": {},
+  "sessions": {
+    "s_a7bef8913d80fb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e49d-d3a2-7b72-a520-fcbe2acbccef",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
