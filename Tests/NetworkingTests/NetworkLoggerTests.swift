@@ -1083,6 +1083,82 @@ struct NetworkLoggerTests {
         #expect(message.contains("truncated=true"))
     }
 
+    @Test("Unlimited retention preserves sliced Data indices in body diagnostics")
+    func unlimitedRetentionFormatsSlicedBodyByByteCount() throws {
+        let asciiBacking = Data("prefix:ASCIItail".utf8)
+        let asciiStart = asciiBacking.index(asciiBacking.startIndex, offsetBy: 7)
+        let asciiSlice = asciiBacking[asciiStart...]
+        #expect(asciiSlice.startIndex == 7)
+        let asciiBody = try #require(BodyRetentionPolicy.unlimited.retain(asciiSlice))
+        #expect(asciiBody.data.startIndex == asciiSlice.startIndex)
+
+        let asciiMessage = NetworkLoggerFormatter(configuration: .init(
+            bodyDiagnostics: .enabled(maximumBytes: 5),
+        ))
+        .format(requestFailedEvent(error: makeValidationError(body: asciiBody, reason: nil)))
+        .message
+        #expect(asciiMessage.contains("body=text"))
+        #expect(asciiMessage.contains("content=ASCII"))
+        #expect(asciiMessage.contains("emitted_bytes=5"))
+        #expect(asciiMessage.contains("truncated=true"))
+
+        let unicodeBacking = Data("prefix:éZ".utf8)
+        let unicodeStart = unicodeBacking.index(unicodeBacking.startIndex, offsetBy: 7)
+        let unicodeSlice = unicodeBacking[unicodeStart...]
+        #expect(unicodeSlice.startIndex == 7)
+        let unicodeBody = try #require(BodyRetentionPolicy.unlimited.retain(unicodeSlice))
+        #expect(unicodeBody.data.startIndex == unicodeSlice.startIndex)
+
+        let unicodeMessage = NetworkLoggerFormatter(configuration: .init(
+            bodyDiagnostics: .enabled(maximumBytes: 2),
+        ))
+        .format(requestFailedEvent(error: makeValidationError(body: unicodeBody, reason: nil)))
+        .message
+        #expect(unicodeMessage.contains("body=text"))
+        #expect(unicodeMessage.contains("content=é"))
+        #expect(unicodeMessage.contains("emitted_bytes=2"))
+        #expect(unicodeMessage.contains("truncated=true"))
+        #expect(!unicodeMessage.contains("body=binary"))
+
+        let boundaryBacking = Data("prefix:A🦄Z".utf8)
+        let boundaryStart = boundaryBacking.index(boundaryBacking.startIndex, offsetBy: 7)
+        let boundarySlice = boundaryBacking[boundaryStart...]
+        #expect(boundarySlice.startIndex == 7)
+        let boundaryBody = try #require(BodyRetentionPolicy.unlimited.retain(boundarySlice))
+        #expect(boundaryBody.data.startIndex == boundarySlice.startIndex)
+
+        let boundaryMessage = NetworkLoggerFormatter(configuration: .init(
+            bodyDiagnostics: .enabled(maximumBytes: 2),
+        ))
+        .format(requestFailedEvent(error: makeValidationError(body: boundaryBody, reason: nil)))
+        .message
+        #expect(boundaryMessage.contains("body=text"))
+        #expect(boundaryMessage.contains("content=A"))
+        #expect(boundaryMessage.contains("emitted_bytes=1"))
+        #expect(boundaryMessage.contains("truncated=true"))
+        #expect(!boundaryMessage.contains("body=binary"))
+
+        var truncatedBacking = Data("prefix:".utf8)
+        truncatedBacking.append(contentsOf: [0xf0, 0x9f])
+        let truncatedStart = truncatedBacking.index(truncatedBacking.startIndex, offsetBy: 7)
+        let incompleteSlice = truncatedBacking[truncatedStart...]
+        #expect(incompleteSlice.startIndex == 7)
+        let truncatedBody = RetainedBody(data: incompleteSlice, originalByteCount: 4)
+        #expect(truncatedBody.isTruncated)
+
+        let truncatedMessage = NetworkLoggerFormatter(configuration: .init(
+            bodyDiagnostics: .enabled(maximumBytes: 4),
+        ))
+        .format(requestFailedEvent(error: makeValidationError(body: truncatedBody, reason: nil)))
+        .message
+        #expect(truncatedMessage.contains("body=text"))
+        #expect(truncatedMessage.contains("emitted_bytes=0"))
+        #expect(truncatedMessage.contains("retained_bytes=2"))
+        #expect(truncatedMessage.contains("original_bytes=4"))
+        #expect(truncatedMessage.contains("truncated=true"))
+        #expect(!truncatedMessage.contains("body=binary"))
+    }
+
     @Test("Invalid UTF-8 inside the bounded prefix remains structural")
     func invalidUTF8WithinCappedPrefixRemainsBinary() {
         let bytes = Data([0x41, 0xff, 0x42])

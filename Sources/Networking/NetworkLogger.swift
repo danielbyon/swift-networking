@@ -452,12 +452,12 @@ enum NetworkPrivacySanitizer {
         maximumCount: Int,
         retainedBodyIsTruncated: Bool,
     ) -> Int? {
-        var index = 0
+        var byteOffset = 0
 
-        while index < maximumCount {
-            let firstByte = data[index]
+        while byteOffset < maximumCount {
+            let firstByte = data[data.index(data.startIndex, offsetBy: byteOffset)]
             if isPrintableTextASCIIByte(firstByte) {
-                index += 1
+                byteOffset += 1
                 continue
             }
 
@@ -481,26 +481,26 @@ enum NetworkPrivacySanitizer {
                 return nil
             }
 
-            let bytesAvailableInBody = data.count - index
+            let bytesAvailableInBody = data.count - byteOffset
             if bytesAvailableInBody < sequenceLength {
                 guard retainedBodyIsTruncated else {
                     return nil
                 }
 
                 for offset in 1 ..< bytesAvailableInBody {
-                    let byte = data[index + offset]
+                    let byte = data[data.index(data.startIndex, offsetBy: byteOffset + offset)]
                     let minimum = offset == 1 ? secondByteMinimum : 0x80
                     let maximum = offset == 1 ? secondByteMaximum : 0xbf
                     guard byte >= minimum, byte <= maximum else {
                         return nil
                     }
                 }
-                return index
+                return byteOffset
             }
 
-            let bytesRemainingInPrefix = maximumCount - index
+            let bytesRemainingInPrefix = maximumCount - byteOffset
             for offset in 1 ..< sequenceLength {
-                let byte = data[index + offset]
+                let byte = data[data.index(data.startIndex, offsetBy: byteOffset + offset)]
                 let minimum = offset == 1 ? secondByteMinimum : 0x80
                 let maximum = offset == 1 ? secondByteMaximum : 0xbf
                 guard isValidTextContinuationByte(
@@ -515,9 +515,9 @@ enum NetworkPrivacySanitizer {
             }
 
             if bytesRemainingInPrefix < sequenceLength {
-                return index
+                return byteOffset
             }
-            index += sequenceLength
+            byteOffset += sequenceLength
         }
 
         return maximumCount
