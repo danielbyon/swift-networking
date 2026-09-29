@@ -614,8 +614,26 @@ enum NetworkPrivacySanitizer {
 
     static func errorIdentity(_ error: any Error) -> String {
         let type = NetworkDiagnosticTypeName.stableName(for: Swift.type(of: error))
-        let foundationError = error as NSError
-        return "\(escape(type))(domain=<redacted>,code=\(foundationError.code))"
+        if Swift.type(of: error) is NSError.Type {
+            guard Swift.type(of: error) == NSError.self,
+                  let foundationError = error as? NSError
+            else {
+                return escape(type)
+            }
+
+            // Only the Foundation NSError implementation has inert code metadata for this diagnostic.
+            return "\(escape(type))(domain=<redacted>,code=\(foundationError.code))"
+        }
+
+        if error is any LocalizedError {
+            return escape(type)
+        }
+
+        guard let customError = error as? any CustomNSError else {
+            return escape(type)
+        }
+
+        return "\(escape(type))(domain=<redacted>,code=\(customError.errorCode))"
     }
 
     static func escape(_ value: String) -> String {
@@ -761,7 +779,14 @@ enum NetworkPrivacySanitizer {
                 return nil
             }
 
-            return "<\(urlShape(from: String(value[matchRange])))>"
+            let target = String(value[matchRange])
+            guard let components = URLComponents(string: target),
+                  isUnambiguousSingleURLValue(target, components: components)
+            else {
+                return "<redacted>"
+            }
+
+            return "<\(urlShape(from: components))>"
         }
         return urls.isEmpty ? "<link-redacted>" : urls.joined(separator: ",")
     }

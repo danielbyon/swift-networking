@@ -7,12 +7,13 @@
 
 /// Produces deterministic Swift type identifiers for public diagnostic output.
 enum NetworkDiagnosticTypeName {
-    /// Removes runtime context and generic arguments, optionally preserving stable namespaces.
+    /// Removes runtime context and generic arguments while retaining nested nominal path components.
     static func stableName(for type: Any.Type, includingNamespace: Bool = false) -> String {
         let reflectedTypeName = String(reflecting: type)
         let contextFreeTypeName = removingRuntimeTypeContextSegments(from: reflectedTypeName)
-        let outerNominalPath = contextFreeTypeName.prefix { $0 != "<" && $0 != "[" && $0 != "(" }
-        let components = outerNominalPath.split(separator: ".", omittingEmptySubsequences: true)
+        let nominalPath = removingGenericArgumentLists(from: contextFreeTypeName)
+        let components = nominalPath.prefix { $0 != "[" && $0 != "(" }
+            .split(separator: ".", omittingEmptySubsequences: true)
         let selectedComponents = includingNamespace ? Array(components) : Array(components.suffix(1))
         let identifiers = selectedComponents.compactMap { component -> String? in
             let identifierBytes = component.utf8.prefix { byte in
@@ -38,6 +39,56 @@ enum NetworkDiagnosticTypeName {
         }
 
         return identifiers.joined(separator: ".")
+    }
+
+    /// Removes balanced generic argument lists while retaining nominal components that follow them.
+    private static func removingGenericArgumentLists(from value: String) -> String {
+        var result = String()
+        result.reserveCapacity(value.utf8.count)
+        var index = value.startIndex
+
+        while index < value.endIndex {
+            guard value[index] == "<" else {
+                result.append(value[index])
+                value.formIndex(after: &index)
+                continue
+            }
+            guard let closingIndex = genericArgumentListEnd(in: value, startingAt: index) else {
+                // Preserve the known nominal prefix and discard only the malformed suffix.
+                return result
+            }
+
+            index = value.index(after: closingIndex)
+        }
+
+        return result
+    }
+
+    /// Finds a balanced generic-list terminator without counting the `>` in function arrows.
+    private static func genericArgumentListEnd(in value: String, startingAt start: String.Index) -> String.Index? {
+        var genericDepth = 0
+        var index = start
+
+        while index < value.endIndex {
+            switch value[index] {
+            case "<":
+                genericDepth += 1
+            case ">":
+                let isFunctionArrow = index > start && value[value.index(before: index)] == "-"
+                if isFunctionArrow == false {
+                    genericDepth -= 1
+                    if genericDepth == 0 {
+                        return index
+                    }
+                }
+            default:
+                break
+            }
+
+            value.formIndex(after: &index)
+        }
+
+        return nil
     }
 
     /// Removes parenthesized compiler context or address segments from a reflected type name.

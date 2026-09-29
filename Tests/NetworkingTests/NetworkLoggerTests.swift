@@ -350,6 +350,48 @@ struct NetworkLoggerTests {
         #expect(!message.contains("LINK-QUERY-SECRET"))
     }
 
+    @Test("A Link target containing a second URL is redacted as a whole")
+    func ambiguousLinkTargetIsRedacted() throws {
+        let message = try messageForRequestHeader(
+            "Link",
+            value: "<https://first.example/path,https://SECOND:PASSWORD@second.example/next>",
+        )
+
+        #expect(message.contains(#"link="<redacted>""#))
+        #expect(!message.contains("SECOND"))
+        #expect(!message.contains("PASSWORD"))
+    }
+
+    @Test("Safe Link targets remain useful beside an ambiguous target")
+    func safeAndAmbiguousLinkTargetsAreRenderedIndependently() throws {
+        let message = try messageForRequestHeader(
+            "Link",
+            value: "<https://safe.example/alternate?token=SAFE-LINK-QUERY-SECRET>; rel=alternate, "
+                +
+                "<https://first.example/path,https://SECOND:PASSWORD@second.example/next?token=AMBIGUOUS-LINK-QUERY-SECRET>; rel=next",
+        )
+
+        #expect(message.contains(#"<https://safe.example/alternate?token=<redacted>>"#))
+        #expect(message.contains("<redacted>"))
+        #expect(!message.contains("SECOND"))
+        #expect(!message.contains("PASSWORD"))
+        #expect(!message.contains("SAFE-LINK-QUERY-SECRET"))
+        #expect(!message.contains("AMBIGUOUS-LINK-QUERY-SECRET"))
+    }
+
+    @Test("Multiple valid Link entries retain sanitized URL shapes")
+    func multipleValidLinkTargetsRemainUseful() throws {
+        let message = try messageForRequestHeader(
+            "Link",
+            value: "<https://one.example/next?token=FIRST-LINK-QUERY-SECRET>; rel=next, "
+                + "<https://two.example/alternate>; rel=alternate",
+        )
+
+        #expect(message.contains(#"<https://one.example/next?token=<redacted>>"#))
+        #expect(message.contains("<https://two.example/alternate>"))
+        #expect(!message.contains("FIRST-LINK-QUERY-SECRET"))
+    }
+
     @Test("Ambiguous dedicated URL headers are redacted as whole values")
     func ambiguousDedicatedURLHeadersAreFullyRedacted() throws {
         let locationName = try #require(HTTPField.Name("Location"), "The Location header name must be valid")
@@ -1038,6 +1080,20 @@ struct NetworkLoggerTests {
         #expect(!message.contains("CUSTOM-ERROR-DESCRIPTION-SECRET"))
     }
 
+    @Test("Formatting an arbitrary LocalizedError does not read description metadata")
+    func arbitraryLocalizedErrorMetadataIsNotEvaluatedForDiagnostics() {
+        let recorder = LocalizedErrorDescriptionRecorder()
+        let error = RecordedLocalizedError(recorder: recorder)
+
+        let message = NetworkLoggerFormatter(configuration: .init())
+            .format(requestFailedEvent(error: error))
+            .message
+
+        #expect(message.contains("RecordedLocalizedError"))
+        #expect(recorder.invocationCount == 0)
+        #expect(!message.contains("LOCALIZED-DESCRIPTION-SECRET"))
+    }
+
     @Test("Function-local error identities omit runtime addresses")
     func functionLocalErrorIdentityIsStableAndAddressFree() {
         struct FunctionLocalDiagnosticError: Error {}
@@ -1050,12 +1106,54 @@ struct NetworkLoggerTests {
         #expect(firstMessage == secondMessage)
         #expect(firstMessage.contains("FunctionLocalDiagnosticError"))
         #expect(!firstMessage.contains("NetworkLoggerTests."))
-        #expect(firstMessage.contains("domain=<redacted>"))
-        #expect(firstMessage.contains("code="))
+        #expect(!firstMessage.contains("domain="))
+        #expect(!firstMessage.contains(",code="))
         #expect(!firstMessage.contains("unknown context at $"))
         #expect(!firstMessage.contains("context at"))
         #expect(!firstMessage.contains("$"))
         #expect(!firstMessage.contains("0x"))
+    }
+
+    @Test("Nested diagnostic keys under one generic type retain distinct names and values")
+    func nestedGenericDiagnosticContextKeysRemainDistinct() {
+        struct NestedGenericArgument {}
+        typealias Container = GenericDiagnosticContainer<DiagnosticArgumentBox<NestedGenericArgument>>
+        let context = RequestContext()
+            .setting(Container.FirstKey.self, value: "SAFE-FIRST-NESTED-VALUE")
+            .setting(Container.SecondKey.self, value: "SAFE-SECOND-NESTED-VALUE")
+        let request = HTTPRequest(method: .get, scheme: "https", authority: "example.com", path: "/resource")
+        let event = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: context,
+            attemptNumber: 1,
+            request: request,
+        ))
+
+        let message = NetworkLoggerFormatter(configuration: .init()).format(event).message
+
+        #expect(message.contains("GenericDiagnosticContainer.FirstKey"))
+        #expect(message.contains("GenericDiagnosticContainer.SecondKey"))
+        #expect(message.contains(#"first\=SAFE-FIRST-NESTED-VALUE"#))
+        #expect(message.contains(#"second\=SAFE-SECOND-NESTED-VALUE"#))
+        #expect(!message.contains("DiagnosticArgumentBox"))
+        #expect(!message.contains("NestedGenericArgument"))
+        #expect(!message.contains("unknown context at $"))
+        #expect(!message.contains("$"))
+        #expect(!message.contains("0x"))
+    }
+
+    @Test("Function arrows inside generic arguments preserve nested type names")
+    func functionTypeGenericArgumentPreservesNestedTypeName() {
+        typealias Container = GenericDiagnosticContainer<() -> String>
+
+        let name = NetworkDiagnosticTypeName.stableName(
+            for: Container.FirstKey.self,
+            includingNamespace: true,
+        )
+
+        #expect(name.hasSuffix("GenericDiagnosticContainer.FirstKey"))
+        #expect(!name.contains("String"))
     }
 
     @Test("Function-local diagnostic context key names remain distinct and address-free")
@@ -1140,9 +1238,30 @@ struct NetworkLoggerTests {
             .message
 
         #expect(reflectedTypeName.contains("TypeNamespace.Detail"))
-        #expect(message.contains("error=GenericDiagnosticError(domain=<redacted>,code="))
+        #expect(message.contains("error=GenericDiagnosticError"))
+        #expect(!message.contains("GenericDiagnosticError(domain="))
+        #expect(!message.contains("GenericDiagnosticError(domain=<redacted>,code="))
         #expect(!message.contains("TypeNamespace.Detail"))
         #expect(!message.contains("NetworkingTests."))
+    }
+
+    @Test("A nested error reports its own name without generic arguments")
+    func nestedGenericErrorIdentityUsesNestedTypeName() {
+        struct NestedGenericArgument {}
+        typealias Container = GenericDiagnosticContainer<DiagnosticArgumentBox<NestedGenericArgument>>
+        let error = Container.NestedDiagnosticError()
+        let formatter = NetworkLoggerFormatter(configuration: .init())
+        let firstMessage = formatter.format(requestFailedEvent(error: error)).message
+        let secondMessage = formatter.format(requestFailedEvent(error: error)).message
+
+        #expect(firstMessage.contains("error=NestedDiagnosticError"))
+        #expect(firstMessage == secondMessage)
+        #expect(!firstMessage.contains("GenericDiagnosticContainer"))
+        #expect(!firstMessage.contains("DiagnosticArgumentBox"))
+        #expect(!firstMessage.contains("NestedGenericArgument"))
+        #expect(!firstMessage.contains("unknown context at $"))
+        #expect(!firstMessage.contains("$"))
+        #expect(!firstMessage.contains("0x"))
     }
 
     @Test("Library-owned localized error descriptions redact header and URL query values")
@@ -1250,6 +1369,21 @@ struct NetworkLoggerTests {
         #expect(!message.contains("ARBITRARY-FOUNDATION-SECRET"))
     }
 
+    @Test("CustomNSError codes are retained without reading user info")
+    func customNSErrorUsesStructuralCodeWithoutReadingUserInfo() {
+        let recorder = LocalizedErrorDescriptionRecorder()
+        let error = RecordedCustomNSError(code: 42, recorder: recorder)
+
+        let message = NetworkLoggerFormatter(configuration: .init())
+            .format(requestFailedEvent(error: error))
+            .message
+
+        #expect(message.contains("RecordedCustomNSError(domain=<redacted>,code=42)"))
+        #expect(recorder.invocationCount == 0)
+        #expect(!message.contains("CUSTOM-ERROR-USERINFO-SECRET"))
+        #expect(!message.contains("CUSTOM-ERROR-DOMAIN-SECRET"))
+    }
+
     private func makeRequestID() -> RequestID {
         guard let rawValue = UUID(uuidString: "00000000-0000-0000-0000-000000000021") else {
             Issue.record("The fixed test request identity must be a valid UUID")
@@ -1257,6 +1391,28 @@ struct NetworkLoggerTests {
         }
 
         return RequestID(rawValue: rawValue)
+    }
+
+    private func messageForRequestHeader(_ name: String, value: String) throws -> String {
+        let fieldName = try #require(HTTPField.Name(name), "The test header name must be valid")
+        var headers = HTTPFields()
+        headers[fieldName] = value
+        let request = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "example.com",
+            path: "/resource",
+            headerFields: headers,
+        )
+        let event = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: request,
+        ))
+
+        return NetworkLoggerFormatter(configuration: .init()).format(event).message
     }
 
     private func makeRequest() -> HTTPRequest {
@@ -1312,6 +1468,84 @@ private struct TestSecretError: Error, LocalizedError, Sendable {
     var errorDescription: String? {
         "ARBITRARY-ERROR-SECRET"
     }
+}
+
+private final class LocalizedErrorDescriptionRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var invocationCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+
+    func recordInvocation() {
+        lock.lock()
+        defer { lock.unlock() }
+        count += 1
+    }
+}
+
+private struct RecordedLocalizedError: Error, LocalizedError, CustomNSError, Sendable {
+    static var errorDomain: String {
+        "RecordedLocalizedError"
+    }
+
+    let recorder: LocalizedErrorDescriptionRecorder
+
+    var errorCode: Int {
+        errorDescription == nil ? 0 : 1
+    }
+
+    var errorUserInfo: [String: Any] {
+        [NSLocalizedDescriptionKey: errorDescription ?? ""]
+    }
+
+    var errorDescription: String? {
+        recorder.recordInvocation()
+        return "LOCALIZED-DESCRIPTION-SECRET"
+    }
+}
+
+private struct RecordedCustomNSError: Error, CustomNSError, Sendable {
+    static var errorDomain: String {
+        "CUSTOM-ERROR-DOMAIN-SECRET"
+    }
+
+    let code: Int
+    let recorder: LocalizedErrorDescriptionRecorder
+
+    var errorCode: Int {
+        code
+    }
+
+    var errorUserInfo: [String: Any] {
+        recorder.recordInvocation()
+        return [NSLocalizedDescriptionKey: "CUSTOM-ERROR-USERINFO-SECRET"]
+    }
+}
+
+private struct DiagnosticArgumentBox<Content> {}
+
+private enum GenericDiagnosticContainer<Context> {
+    enum FirstKey: DiagnosticRequestContextKey {
+        typealias Value = String
+
+        static func diagnosticDescription(for value: String) -> String {
+            "first=\(value)"
+        }
+    }
+
+    enum SecondKey: DiagnosticRequestContextKey {
+        typealias Value = String
+
+        static func diagnosticDescription(for value: String) -> String {
+            "second=\(value)"
+        }
+    }
+
+    struct NestedDiagnosticError: Error {}
 }
 
 private enum PrivateContextKey: RequestContextKey {
