@@ -353,6 +353,22 @@ enum NetworkPrivacySanitizer {
         return urlShape(from: components)
     }
 
+    /// Hides filesystem and other payload paths in download error locations.
+    static func downloadLocationShape(_ url: URL) -> String {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return "<url-unavailable>"
+        }
+        guard let scheme = components.scheme else {
+            return "<redacted>"
+        }
+
+        if scheme.lowercased() == "file" {
+            return "file:<redacted>"
+        }
+
+        return "\(scheme):<redacted>"
+    }
+
     static func headers(_ fields: HTTPFields, sensitiveHeaderNames: Set<String>) -> String {
         let normalizedSensitiveHeaderNames = Set(sensitiveHeaderNames.map { $0.lowercased() })
         var renderedFields: [(String, String)] = []
@@ -571,21 +587,21 @@ enum NetworkPrivacySanitizer {
         case let .finalizationFailed(source, destination, underlyingError):
             [
                 "Download finalization failed",
-                "source=\(urlShape(source))",
-                "destination=\(urlShape(destination))",
+                "source=\(downloadLocationShape(source))",
+                "destination=\(downloadLocationShape(destination))",
                 "underlying=\(errorIdentity(underlyingError))",
             ].joined(separator: " ")
         case let .moveFailed(source, destination, underlyingError):
             [
                 "Download move failed",
-                "source=\(urlShape(source))",
-                "destination=\(urlShape(destination))",
+                "source=\(downloadLocationShape(source))",
+                "destination=\(downloadLocationShape(destination))",
                 "underlying=\(errorIdentity(underlyingError))",
             ].joined(separator: " ")
         case let .removeFailed(url, underlyingError):
             [
                 "Download removal failed",
-                "url=\(urlShape(url))",
+                "url=\(downloadLocationShape(url))",
                 "underlying=\(errorIdentity(underlyingError))",
             ].joined(separator: " ")
         }
@@ -712,12 +728,48 @@ enum NetworkPrivacySanitizer {
     private static func isUnambiguousSingleURLValue(_ value: String, components: URLComponents) -> Bool {
         guard rawQueryNamesAreWellFormed(in: value),
               value.unicodeScalars.contains(where: { $0.value <= 0x20 || $0.value == 0x7f }) == false,
+              containsUnsafeSchemeRelativeAuthority(in: value, components: components) == false,
               containsEmbeddedURLReference(in: components.path) == false
         else {
             return false
         }
 
         return queryContainsURLReferenceInName(components.percentEncodedQuery) == false
+    }
+
+    /// Rejects scheme-relative authorities that acquire userinfo delimiters after percent decoding.
+    private static func containsUnsafeSchemeRelativeAuthority(
+        in value: String,
+        components: URLComponents,
+    ) -> Bool {
+        guard components.scheme == nil, value.hasPrefix("//") else {
+            return false
+        }
+        guard components.user == nil,
+              components.password == nil,
+              components.host?.contains("@") != true
+        else {
+            return true
+        }
+
+        let authorityStart = value.index(value.startIndex, offsetBy: 2)
+        let authorityEnd = value[authorityStart...].firstIndex(where: { "/?#".contains($0) }) ?? value.endIndex
+        var authority = String(value[authorityStart ..< authorityEnd])
+        for _ in 0 ..< 8 {
+            if authority.contains("@") {
+                return true
+            }
+            guard let decodedAuthority = authority.removingPercentEncoding else {
+                return true
+            }
+
+            if decodedAuthority == authority {
+                return false
+            }
+            authority = decodedAuthority
+        }
+
+        return authority.contains("@") || containsPercentEncodedOctet(in: authority)
     }
 
     /// Detects URL references and malformed encodings in query names before URL values are accepted.

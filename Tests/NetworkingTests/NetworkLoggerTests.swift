@@ -640,6 +640,27 @@ struct NetworkLoggerTests {
         #expect(!message.contains("GENERIC-QUERY-SECRET"))
     }
 
+    @Test("Encoded userinfo in scheme-relative URL authorities is redacted")
+    func encodedSchemeRelativeUserinfoIsRedacted() throws {
+        let maliciousURL = "//SCHEME-RELATIVE-USER%3ASCHEME-RELATIVE-PASSWORD%40private.example/path"
+            + "?token=SCHEME-RELATIVE-QUERY-SECRET"
+        let locationMessage = try messageForRequestHeader("Location", value: maliciousURL)
+        let linkMessage = try messageForRequestHeader("Link", value: "<\(maliciousURL)>; rel=preload")
+        let safeLocationMessage = try messageForRequestHeader("Location", value: "//cdn.example/path")
+        let safeLinkMessage = try messageForRequestHeader("Link", value: "<//cdn.example/path>; rel=preload")
+
+        #expect(locationMessage.contains(#"location="<redacted>""#))
+        #expect(linkMessage.contains(#"link="<redacted>""#))
+        #expect(safeLocationMessage.contains(#"location="//cdn.example/path""#))
+        #expect(safeLinkMessage.contains(#"link="<//cdn.example/path>""#))
+
+        for message in [locationMessage, linkMessage, safeLocationMessage, safeLinkMessage] {
+            #expect(!message.contains("SCHEME-RELATIVE-USER"))
+            #expect(!message.contains("SCHEME-RELATIVE-PASSWORD"))
+            #expect(!message.contains("SCHEME-RELATIVE-QUERY-SECRET"))
+        }
+    }
+
     @Test("Accept and Content-Type redact explicit URL references")
     func mediaTypeHeadersRedactExplicitURLReferences() throws {
         let acceptName = try #require(HTTPField.Name("Accept"), "The header name must be valid")
@@ -1512,6 +1533,30 @@ struct NetworkLoggerTests {
         #expect(message.contains("destination=file:<redacted>"))
         #expect(!message.contains("FILE-SOURCE-PATH-SECRET"))
         #expect(!message.contains("FILE-DESTINATION-PATH-SECRET"))
+    }
+
+    @Test("Path-only download error locations are redacted in descriptions and logs")
+    func pathOnlyDownloadErrorLocationsAreRedacted() throws {
+        let source = try #require(URL(string: "/private/SOURCE-PATH-SECRET"))
+        let destination = try #require(URL(string: "/private/DESTINATION-PATH-SECRET"))
+        let error = DownloadFileError.moveFailed(
+            source: source,
+            destination: destination,
+            underlyingError: TestSecretError(),
+        )
+        let description = try #require((error as? any LocalizedError)?.errorDescription)
+        let message = NetworkLoggerFormatter(configuration: .init())
+            .format(requestFailedEvent(error: error))
+            .message
+
+        for diagnostic in [description, message] {
+            #expect(diagnostic.contains("source=<redacted>"))
+            #expect(diagnostic.contains("destination=<redacted>"))
+            #expect(diagnostic.contains("underlying=TestSecretError"))
+            #expect(!diagnostic.contains("SOURCE-PATH-SECRET"))
+            #expect(!diagnostic.contains("DESTINATION-PATH-SECRET"))
+            #expect(!diagnostic.contains("/private/"))
+        }
     }
 
     @Test("Embedded URLs in request paths are redacted for attempts and redirects")
