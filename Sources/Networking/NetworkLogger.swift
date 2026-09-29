@@ -271,7 +271,9 @@ package struct NetworkLoggerFormatter: Sendable {
 
     private func appendContext(_ context: RequestContext, to fields: inout [String]) {
         let values = context.diagnosticRepresentation
-            .sorted { $0.key < $1.key }
+            .sorted { left, right in
+                left.key == right.key ? left.value < right.value : left.key < right.key
+            }
             .map { "\(safe($0.key))=\(safe($0.value))" }
         if values.isEmpty == false {
             fields.append("context=[\(values.joined(separator: ","))]")
@@ -919,17 +921,20 @@ enum NetworkPrivacySanitizer {
     private static func urlShape(from source: URLComponents) -> String {
         let path = source.percentEncodedPath
         let base: String
-        if let scheme = source.scheme, let host = source.host {
+        if let scheme = source.scheme?.lowercased(), scheme == "file" {
+            return "file:<redacted>"
+        }
+        if let scheme = source.scheme,
+           ["http", "https"].contains(scheme.lowercased()),
+           let host = source.host {
             var components = URLComponents()
             components.scheme = scheme
             components.host = host
             components.port = source.port
             components.percentEncodedPath = path
             base = components.string ?? "<url-unavailable>"
-        } else if let scheme = source.scheme, scheme.lowercased() == "file" {
-            base = "file://\(path)"
         } else if let scheme = source.scheme {
-            base = "\(scheme):\(path)"
+            return "\(scheme):<redacted>"
         } else if let host = source.host {
             base = "//\(host)\(path)"
         } else {

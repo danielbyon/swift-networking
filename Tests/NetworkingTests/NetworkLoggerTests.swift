@@ -1398,9 +1398,9 @@ struct NetworkLoggerTests {
         let downloadDescription = downloadError.errorDescription ?? ""
 
         #expect(descriptions.contains("set-cookie=<redacted>"))
-        #expect(descriptions.contains("token=<redacted>"))
-        #expect(downloadDescription.contains("source=file:///private/source?token=<redacted>"))
-        #expect(downloadDescription.contains("destination=file:///private/destination?token=<redacted>"))
+        #expect(downloadDescription.contains("source=file:<redacted>"))
+        #expect(downloadDescription.contains("destination=file:<redacted>"))
+        #expect(!descriptions.contains("token="))
         #expect(!descriptions.contains("SET-COOKIE-SECRET"))
         #expect(!descriptions.contains("HEADER-QUERY-SECRET"))
         #expect(!descriptions.contains(sourceSecret))
@@ -1471,6 +1471,47 @@ struct NetworkLoggerTests {
         #expect(recorder.invocationCount == 0)
         #expect(!message.contains("CUSTOM-ERROR-USERINFO-SECRET"))
         #expect(!message.contains("CUSTOM-ERROR-DOMAIN-SECRET"))
+    }
+
+    @Test("Opaque URI payloads are redacted in URL and Link headers")
+    func opaqueURIPayloadsAreRedactedAcrossURLHeadersAndLinks() throws {
+        let location = try messageForRequestHeader(
+            "Location",
+            value: "data:text/plain,OPAQUE-LOCATION-PAYLOAD-SECRET",
+        )
+        let contentLocation = try messageForRequestHeader(
+            "Content-Location",
+            value: "custom:OPAQUE-CONTENT-LOCATION-PAYLOAD-SECRET",
+        )
+        let link = try messageForRequestHeader(
+            "Link",
+            value: "<data:text/plain,OPAQUE-LINK-PAYLOAD-SECRET>; rel=alternate",
+        )
+
+        #expect(location.contains(#"location="data:<redacted>""#))
+        #expect(contentLocation.contains(#"content-location="custom:<redacted>""#))
+        #expect(link.contains(#"link="<data:<redacted>>""#))
+        for message in [location, contentLocation, link] {
+            #expect(message.contains("<redacted>"))
+            #expect(!message.contains("OPAQUE-LOCATION-PAYLOAD-SECRET"))
+            #expect(!message.contains("OPAQUE-CONTENT-LOCATION-PAYLOAD-SECRET"))
+            #expect(!message.contains("OPAQUE-LINK-PAYLOAD-SECRET"))
+        }
+    }
+
+    @Test("File URL paths are redacted in library-owned error descriptions")
+    func fileURLPathsAreRedactedInLocalizedErrorDescriptions() throws {
+        let error = DownloadFileError.finalizationFailed(
+            source: URL(fileURLWithPath: "/private/FILE-SOURCE-PATH-SECRET"),
+            destination: URL(fileURLWithPath: "/private/FILE-DESTINATION-PATH-SECRET"),
+            underlyingError: NSError(domain: "filesystem", code: 1),
+        )
+        let message = try #require((error as? any LocalizedError)?.errorDescription)
+
+        #expect(message.contains("source=file:<redacted>"))
+        #expect(message.contains("destination=file:<redacted>"))
+        #expect(!message.contains("FILE-SOURCE-PATH-SECRET"))
+        #expect(!message.contains("FILE-DESTINATION-PATH-SECRET"))
     }
 
     @Test("Embedded URLs in request paths are redacted for attempts and redirects")

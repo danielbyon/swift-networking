@@ -7,6 +7,12 @@
 
 import Foundation
 
+/// One opted-in context value paired with its privacy-safe diagnostic key name.
+package struct RequestContextDiagnosticEntry: Sendable, Equatable {
+    package let key: String
+    package let value: String
+}
+
 /// Identifies a typed value that can be carried with a request.
 public protocol RequestContextKey<Value> {
     /// The Sendable value stored for this key.
@@ -46,17 +52,19 @@ public struct RequestContext: Sendable {
         entries[ObjectIdentifier(key)]?.value as? Key.Value
     }
 
-    /// Returns diagnostic values recorded for keys that explicitly opt in.
-    ///
-    /// The dictionary key is a qualified, normalized, address-free identifier for the context key type.
-    package var diagnosticRepresentation: [String: String] {
-        entries.values.reduce(into: [:]) { result, entry in
-            guard let key = entry.diagnosticKey, let value = entry.diagnosticValue else {
-                return
-            }
+    /// Returns opted-in values with normalized key names, retaining keys whose safe names collide.
+    package var diagnosticRepresentation: [RequestContextDiagnosticEntry] {
+        entries.values
+            .compactMap { entry in
+                guard let key = entry.diagnosticKey, let value = entry.diagnosticValue else {
+                    return nil
+                }
 
-            result[key] = value
-        }
+                return RequestContextDiagnosticEntry(key: key, value: value)
+            }
+            .sorted { left, right in
+                left.key == right.key ? left.value < right.value : left.key < right.key
+            }
     }
 
     package func setting<Key: RequestContextKey>(

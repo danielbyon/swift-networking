@@ -49,14 +49,7 @@ enum NetworkDiagnosticTypeName {
         let reflectedTypeName = String(reflecting: type)
         let contextFreeTypeName = removingRuntimeTypeContextSegments(from: reflectedTypeName)
         let normalizedName = normalizingContextKeyTypeName(contextFreeTypeName)
-        guard normalizedName.isEmpty == false,
-              normalizedName.contains("$") == false,
-              normalizedName.lowercased().contains("0x") == false
-        else {
-            return stableName(for: type, includingNamespace: true)
-        }
-
-        return normalizedName
+        return normalizedName.isEmpty ? "Error" : normalizedName
     }
 
     /// Preserves reflected generic structure and encodes unsupported Unicode scalars deterministically.
