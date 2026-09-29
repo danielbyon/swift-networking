@@ -59,7 +59,7 @@ enum NetworkDiagnosticTypeName {
         return normalizedName
     }
 
-    /// Preserves reflected generic structure while removing unstable context markers and formatting noise.
+    /// Preserves reflected generic structure and encodes unsupported Unicode scalars deterministically.
     private static func normalizingContextKeyTypeName(_ value: String) -> String {
         var result = String()
         result.reserveCapacity(value.utf8.count)
@@ -71,7 +71,10 @@ enum NetworkDiagnosticTypeName {
 
             let isIdentifierCharacter = character.isLetter || character.isNumber || character == "_"
             let isTypeSyntaxCharacter = "<>,.?&()[]:-!".contains(character)
-            guard isIdentifierCharacter || isTypeSyntaxCharacter else {
+            if isIdentifierCharacter == false, isTypeSyntaxCharacter == false {
+                for scalar in character.unicodeScalars {
+                    result.append("~u{\(String(scalar.value, radix: 16, uppercase: true))}")
+                }
                 continue
             }
 

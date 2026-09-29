@@ -1473,6 +1473,142 @@ struct NetworkLoggerTests {
         #expect(!message.contains("CUSTOM-ERROR-DOMAIN-SECRET"))
     }
 
+    @Test("Embedded URLs in request paths are redacted for attempts and redirects")
+    func requestEmbeddedURLsAreRedacted() {
+        let timestamp = Date(timeIntervalSince1970: 1_800_000_000)
+        let requestID = makeRequestID()
+        let request = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "safe.example",
+            path: "/path,https://REQUEST-USER:REQUEST-PASSWORD@private.example/next",
+            headerFields: HTTPFields(),
+        )
+        let redirectRequest = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "safe.example",
+            path: "/path,//REDIRECT-USER:REDIRECT-PASSWORD@private.example/next",
+            headerFields: HTTPFields(),
+        )
+        let formatter = NetworkLoggerFormatter(configuration: .init())
+        let attempt = formatter.format(.attemptStarted(AttemptStartedEvent(
+            requestID: requestID,
+            timestamp: timestamp,
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: request,
+        )))
+        let redirect = formatter.format(.redirectDecision(RedirectDecisionEvent(
+            requestID: requestID,
+            timestamp: timestamp,
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            redirectOrdinal: 1,
+            httpResponse: makeResponse(),
+            proposedRequest: redirectRequest,
+            decision: .reject,
+        )))
+
+        #expect(attempt.message.contains("url=<redacted>"))
+        #expect(!attempt.message.contains("REQUEST-USER"))
+        #expect(!attempt.message.contains("REQUEST-PASSWORD"))
+        #expect(redirect.message.contains("url=<redacted>"))
+        #expect(!redirect.message.contains("REDIRECT-USER"))
+        #expect(!redirect.message.contains("REDIRECT-PASSWORD"))
+
+        let ordinaryRequest = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "safe.example",
+            path: "/api//v1?token=REPEATED-SLASH-QUERY-SECRET",
+            headerFields: HTTPFields(),
+        )
+        let ordinary = formatter.format(.attemptStarted(AttemptStartedEvent(
+            requestID: requestID,
+            timestamp: timestamp,
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: ordinaryRequest,
+        )))
+        #expect(ordinary.message.contains("url=https://safe.example/api//v1?token=<redacted>"))
+        #expect(!ordinary.message.contains("REPEATED-SLASH-QUERY-SECRET"))
+    }
+
+    @Test("Percent-encoded URL references in generic headers are redacted")
+    func genericHeaderEncodedURLsAreRedacted() throws {
+        let singleName = try #require(HTTPField.Name("X-Encoded-Single"), "The test header name must be valid")
+        let doubleName = try #require(HTTPField.Name("X-Encoded-Double"), "The test header name must be valid")
+        let finalLayerName = try #require(
+            HTTPField.Name("X-Encoded-Final-Layer"),
+            "The test header name must be valid",
+        )
+        let deepName = try #require(HTTPField.Name("X-Encoded-Deep"), "The test header name must be valid")
+        let malformedName = try #require(HTTPField.Name("X-Encoded-Malformed"), "The test header name must be valid")
+        let ordinaryName = try #require(HTTPField.Name("X-Percent-Text"), "The test header name must be valid")
+        var headers = HTTPFields()
+        headers[singleName] =
+            "https%3A%2F%2FHEADER-USER:HEADER-PASSWORD@private.example/path%3F" +
+            "token%3DSINGLE-HEADER-QUERY-SECRET"
+        headers[doubleName] =
+            "https%253A%252F%252FDOUBLE-USER:DOUBLE-PASSWORD@private.example/path%253F" +
+            "token%253DDOUBLE-HEADER-QUERY-SECRET"
+        var encodedQueryMarker = "%3F"
+        var finalLayerQueryMarker = encodedQueryMarker
+        var deeplyEncodedQueryMarker = encodedQueryMarker
+        for layer in 2 ... 9 {
+            encodedQueryMarker = encodedQueryMarker.replacing("%", with: "%25")
+            if layer == 8 {
+                finalLayerQueryMarker = encodedQueryMarker
+            } else if layer == 9 {
+                deeplyEncodedQueryMarker = encodedQueryMarker
+            }
+        }
+        #expect(finalLayerQueryMarker == "%252525252525253F")
+        #expect(deeplyEncodedQueryMarker == "%25252525252525253F")
+        headers[finalLayerName] = "opaque\(finalLayerQueryMarker)token=FINAL-LAYER-QUERY-SECRET"
+        headers[deepName] = "opaque\(deeplyEncodedQueryMarker)token=DEEP-HEADER-QUERY-SECRET"
+        headers[malformedName] = "https%3A%2F%2FMALFORMED-USER:MALFORMED-PASSWORD@private.example/path%ZZ"
+        headers[ordinaryName] = "release%2Fbeta"
+
+        let request = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "safe.example",
+            path: "/resource",
+            headerFields: headers,
+        )
+        let event = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: request,
+        ))
+        let message = NetworkLoggerFormatter(configuration: .init()).format(event).message
+
+        #expect(message.contains("x-encoded-single=<redacted>"))
+        #expect(message.contains("x-encoded-double=<redacted>"))
+        #expect(message.contains("x-encoded-final-layer=<redacted>"))
+        #expect(message.contains("x-encoded-deep=<redacted>"))
+        #expect(message.contains("x-encoded-malformed=<redacted>"))
+        #expect(message.contains("x-percent-text=release%2Fbeta"))
+        for secret in [
+            "HEADER-USER",
+            "HEADER-PASSWORD",
+            "SINGLE-HEADER-QUERY-SECRET",
+            "DOUBLE-USER",
+            "DOUBLE-PASSWORD",
+            "DOUBLE-HEADER-QUERY-SECRET",
+            "FINAL-LAYER-QUERY-SECRET",
+            "DEEP-HEADER-QUERY-SECRET",
+            "MALFORMED-USER",
+            "MALFORMED-PASSWORD",
+        ] {
+            #expect(!message.contains(secret))
+        }
+    }
+
     private func makeRequestID() -> RequestID {
         guard let rawValue = UUID(uuidString: "00000000-0000-0000-0000-000000000021") else {
             Issue.record("The fixed test request identity must be a valid UUID")

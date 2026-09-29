@@ -688,7 +688,7 @@ enum NetworkPrivacySanitizer {
         case "link":
             quoted(linkHeaderShape(value))
         default:
-            if value.contains("://") || value.contains("//") || value.contains("?") {
+            if containsURLReferenceAfterPercentDecoding(in: value) {
                 "<redacted>"
             } else {
                 escape(value)
@@ -777,6 +777,54 @@ enum NetworkPrivacySanitizer {
         return false
     }
 
+    /// Detects raw and bounded percent-encoded URL shapes without changing emitted header text.
+    private static func containsURLReferenceAfterPercentDecoding(in value: String) -> Bool {
+        var candidate = value
+
+        for _ in 0 ..< 8 {
+            if containsURLReferenceShape(in: candidate) || candidate.contains("?") {
+                return true
+            }
+            let decoded = partiallyDecodingPercentEscapes(in: candidate)
+            guard decoded.didDecode else {
+                return false
+            }
+
+            candidate = decoded.value
+        }
+
+        return containsURLReferenceShape(in: candidate)
+            || candidate.contains("?")
+            || containsPercentEncodedOctet(in: candidate)
+    }
+
+    /// Decodes valid escapes while preserving malformed percent text for conservative classification.
+    private static func partiallyDecodingPercentEscapes(in value: String) -> (value: String, didDecode: Bool) {
+        let bytes = Array(value.utf8)
+        var decodedBytes: [UInt8] = []
+        decodedBytes.reserveCapacity(bytes.count)
+        var didDecode = false
+        var index = 0
+
+        while index < bytes.count {
+            if bytes[index] == UInt8(ascii: "%"),
+               index + 2 < bytes.count,
+               let decodedByte = UInt8(
+                   String(decoding: bytes[(index + 1) ..< (index + 3)], as: UTF8.self),
+                   radix: 16,
+               ) {
+                decodedBytes.append(decodedByte)
+                didDecode = true
+                index += 3
+            } else {
+                decodedBytes.append(bytes[index])
+                index += 1
+            }
+        }
+
+        return (String(decoding: decodedBytes, as: UTF8.self), didDecode)
+    }
+
     private static func isHexDigit(_ byte: UInt8) -> Bool {
         (0x30 ... 0x39).contains(byte)
             || (0x41 ... 0x46).contains(byte)
@@ -860,6 +908,9 @@ enum NetworkPrivacySanitizer {
               let components = URLComponents(string: value)
         else {
             return "<url-unavailable>"
+        }
+        guard containsEmbeddedURLReference(in: components.path) == false else {
+            return "<redacted>"
         }
 
         return urlShape(from: components)

@@ -86,6 +86,30 @@ struct RequestContextTests {
         }
     }
 
+    @Test("Diagnostic context keys preserve unsupported symbol identity deterministically")
+    func symbolContextKeysStayDistinct() {
+        let first = RequestContext().setting(Diagnostic🐶ContextKey.self, value: "DOG-SYMBOL-VALUE")
+        let second = first.setting(Diagnostic🐱ContextKey.self, value: "CAT-SYMBOL-VALUE")
+        let representation = second.diagnosticRepresentation
+        let reversedRepresentation = RequestContext()
+            .setting(Diagnostic🐱ContextKey.self, value: "CAT-SYMBOL-VALUE")
+            .setting(Diagnostic🐶ContextKey.self, value: "DOG-SYMBOL-VALUE")
+            .diagnosticRepresentation
+        let names = Array(representation.keys)
+
+        #expect(representation.count == 2)
+        #expect(representation.values.contains("value=DOG-SYMBOL-VALUE"))
+        #expect(representation.values.contains("value=CAT-SYMBOL-VALUE"))
+        #expect(names.contains(where: { $0.contains("~u{1F436}") }))
+        #expect(names.contains(where: { $0.contains("~u{1F431}") }))
+        #expect(representation == reversedRepresentation)
+        for name in names {
+            #expect(!name.contains("unknown context at $"))
+            #expect(!name.contains("$"))
+            #expect(!name.lowercased().contains("0x"))
+        }
+    }
+
     private func makeRequest() throws -> Request<Data> {
         let url = try #require(URL(string: "https://example.com/context"))
         let endpoint = Endpoint<Never, Never, Data>.data(
@@ -134,3 +158,22 @@ private enum GenericDiagnosticContextKey<Argument: Sendable>: DiagnosticRequestC
         "value=\(value)"
     }
 }
+
+// swiftlint:disable type_name
+private enum Diagnostic🐶ContextKey: DiagnosticRequestContextKey {
+    typealias Value = String
+
+    static func diagnosticDescription(for value: String) -> String {
+        "value=\(value)"
+    }
+}
+
+private enum Diagnostic🐱ContextKey: DiagnosticRequestContextKey {
+    typealias Value = String
+
+    static func diagnosticDescription(for value: String) -> String {
+        "value=\(value)"
+    }
+}
+
+// swiftlint:enable type_name
