@@ -1863,6 +1863,169 @@ struct NetworkLoggerTests {
         }
     }
 
+    @Test("Backslash-delimited URL references are redacted in generic headers")
+    func backslashURLReferencesAreRedactedInGenericHeaders() throws {
+        let rawName = try #require(
+            HTTPField.Name("X-Backslash-Raw"),
+            "The test header name must be valid",
+        )
+        let relativeName = try #require(
+            HTTPField.Name("X-Backslash-Relative"),
+            "The test header name must be valid",
+        )
+        let encodedName = try #require(
+            HTTPField.Name("X-Backslash-Encoded"),
+            "The test header name must be valid",
+        )
+        let nestedName = try #require(
+            HTTPField.Name("X-Backslash-Nested"),
+            "The test header name must be valid",
+        )
+        let ordinaryName = try #require(
+            HTTPField.Name("X-Backslash-Text"),
+            "The test header name must be valid",
+        )
+        var headers = HTTPFields()
+        headers[rawName] = #"https:\\RAW-USER:RAW-PASSWORD@private.example/path"#
+        headers[relativeName] = #"\\RELATIVE-USER:RELATIVE-PASSWORD@private.example/path"#
+        headers[encodedName] = "https:%5C%5CENCODED-USER:ENCODED-PASSWORD@private.example/path"
+        headers[nestedName] = "https:%255C%255CNESTED-USER:NESTED-PASSWORD@private.example/path"
+        headers[ordinaryName] = #"release\beta"#
+
+        let request = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "safe.example",
+            path: "/resource",
+            headerFields: headers,
+        )
+        let event = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: request,
+        ))
+        let message = NetworkLoggerFormatter(configuration: .init()).format(event).message
+
+        #expect(message.contains("x-backslash-raw=<redacted>"))
+        #expect(message.contains("x-backslash-relative=<redacted>"))
+        #expect(message.contains("x-backslash-encoded=<redacted>"))
+        #expect(message.contains("x-backslash-nested=<redacted>"))
+        #expect(message.contains("x-backslash-text="))
+        #expect(message.contains("release"))
+        #expect(message.contains("beta"))
+        for secret in [
+            "RAW-USER",
+            "RAW-PASSWORD",
+            "RELATIVE-USER",
+            "RELATIVE-PASSWORD",
+            "ENCODED-USER",
+            "ENCODED-PASSWORD",
+            "NESTED-USER",
+            "NESTED-PASSWORD",
+        ] {
+            #expect(!message.contains(secret))
+        }
+    }
+
+    @Test("Backslash-delimited URL references are redacted in URL headers and Link targets")
+    func backslashURLReferencesAreRedactedInURLHeadersAndLinks() throws {
+        let location = try messageForRequestHeader(
+            "Location",
+            value: #"https://safe.example/path,https:\\LOCATION-USER:LOCATION-PASSWORD@private.example/next"#,
+        )
+        let referer = try messageForRequestHeader(
+            "Referer",
+            value: "https://safe.example/path,https:%255C%255CREFERER-USER:REFERER-PASSWORD@private.example/next",
+        )
+        let link = try messageForRequestHeader(
+            "Link",
+            value: #"<https://safe.example/path,https:\\LINK-USER:LINK-PASSWORD@private.example/next>; rel=next"#,
+        )
+
+        #expect(location.contains(#"location="<redacted>""#))
+        #expect(referer.contains(#"referer="<redacted>""#))
+        #expect(link.contains(#"link="<redacted>""#))
+        for secret in [
+            "LOCATION-USER",
+            "LOCATION-PASSWORD",
+            "REFERER-USER",
+            "REFERER-PASSWORD",
+            "LINK-USER",
+            "LINK-PASSWORD",
+        ] {
+            #expect(!location.contains(secret))
+            #expect(!referer.contains(secret))
+            #expect(!link.contains(secret))
+        }
+    }
+
+    @Test("Backslash-delimited embedded URLs are redacted in request and redirect paths")
+    func backslashEmbeddedURLsAreRedactedInRequestAndRedirectPaths() {
+        let timestamp = Date(timeIntervalSince1970: 1_800_000_000)
+        let requestID = makeRequestID()
+        let request = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "safe.example",
+            path: #"/path,https:\\REQUEST-USER:REQUEST-PASSWORD@private.example/next"#,
+            headerFields: HTTPFields(),
+        )
+        let redirectRequest = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "safe.example",
+            path: #"/path,https:\\REDIRECT-USER:REDIRECT-PASSWORD@private.example/next"#,
+            headerFields: HTTPFields(),
+        )
+        let nestedRequest = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "safe.example",
+            path: #"/path,https:%255C%255CNESTED-REQUEST-USER:NESTED-REQUEST-PASSWORD@private.example/next"#,
+            headerFields: HTTPFields(),
+        )
+        let formatter = NetworkLoggerFormatter(configuration: .init())
+        let attemptEvent = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: requestID,
+            timestamp: timestamp,
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: request,
+        ))
+        let attempt = formatter.format(attemptEvent).message
+        let nestedAttemptEvent = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: requestID,
+            timestamp: timestamp,
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: nestedRequest,
+        ))
+        let nestedAttempt = formatter.format(nestedAttemptEvent).message
+        let redirectEvent = NetworkEvent.redirectDecision(RedirectDecisionEvent(
+            requestID: requestID,
+            timestamp: timestamp,
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            redirectOrdinal: 1,
+            httpResponse: makeResponse(),
+            proposedRequest: redirectRequest,
+            decision: .reject,
+        ))
+        let redirect = formatter.format(redirectEvent).message
+
+        #expect(attempt.contains("url=<redacted>"))
+        #expect(!attempt.contains("REQUEST-USER"))
+        #expect(!attempt.contains("REQUEST-PASSWORD"))
+        #expect(nestedAttempt.contains("url=<redacted>"))
+        #expect(!nestedAttempt.contains("NESTED-REQUEST-USER"))
+        #expect(!nestedAttempt.contains("NESTED-REQUEST-PASSWORD"))
+        #expect(redirect.contains("url=<redacted>"))
+        #expect(!redirect.contains("REDIRECT-USER"))
+        #expect(!redirect.contains("REDIRECT-PASSWORD"))
+    }
+
     private func makeRequestID() -> RequestID {
         guard let rawValue = UUID(uuidString: "00000000-0000-0000-0000-000000000021") else {
             Issue.record("The fixed test request identity must be a valid UUID")

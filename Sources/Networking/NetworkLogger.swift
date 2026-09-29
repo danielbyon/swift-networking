@@ -815,7 +815,8 @@ enum NetworkPrivacySanitizer {
     }
 
     private static func containsURLReferenceShape(in value: String) -> Bool {
-        value.contains("://") || value.contains("//")
+        let classificationCandidate = value.replacing("\\", with: "/")
+        return classificationCandidate.contains("://") || classificationCandidate.contains("//")
     }
 
     private static func containsPercentEncodedOctet(in value: String) -> Bool {
@@ -952,6 +953,11 @@ enum NetworkPrivacySanitizer {
     }
 
     private static func containsEmbeddedURLReferenceShape(in path: String) -> Bool {
+        // Treat backslashes as slashes only in this temporary classification candidate.
+        if path.contains("\\") {
+            return containsEmbeddedURLReferenceShape(in: path.replacing("\\", with: "/"))
+        }
+
         guard !path.contains("://") else {
             return true
         }
