@@ -30,7 +30,8 @@ public struct NetworkLogger: Sendable {
 
         /// Additional HTTP field names whose values are redacted case-insensitively.
         ///
-        /// Authorization, Proxy-Authorization, Cookie, and Set-Cookie are always redacted and cannot be removed.
+        /// Authorization, Authentication-Info, Proxy-Authorization, Proxy-Authentication-Info, Cookie,
+        /// Set-Cookie, and Set-Cookie2 are always redacted and cannot be removed.
         public let additionalSensitiveHeaders: Set<String>
 
         /// The opt-in policy for rendering retained response body bytes.
@@ -332,6 +333,7 @@ enum NetworkPrivacySanitizer {
         "proxy-authorization",
         "proxy-authentication-info",
         "set-cookie",
+        "set-cookie2",
     ]
 
     static func requestURLShape(_ request: HTTPRequest) -> String {
@@ -729,7 +731,7 @@ enum NetworkPrivacySanitizer {
         guard rawQueryNamesAreWellFormed(in: value),
               value.unicodeScalars.contains(where: { $0.value <= 0x20 || $0.value == 0x7f }) == false,
               containsUnsafeSchemeRelativeAuthority(in: value, components: components) == false,
-              containsEmbeddedURLReference(in: components.path) == false
+              containsEmbeddedURLReference(in: components.percentEncodedPath) == false
         else {
             return false
         }
@@ -902,6 +904,49 @@ enum NetworkPrivacySanitizer {
     }
 
     private static func containsEmbeddedURLReference(in path: String) -> Bool {
+        var candidate = path
+        for _ in 0 ..< 8 {
+            if containsEmbeddedURLReferenceShape(in: candidate) {
+                return true
+            }
+            if containsMalformedPercentEscape(in: candidate) {
+                return true
+            }
+
+            let decoded = partiallyDecodingPercentEscapes(in: candidate)
+            guard decoded.didDecode else {
+                return false
+            }
+
+            candidate = decoded.value
+        }
+
+        return containsEmbeddedURLReferenceShape(in: candidate)
+            || containsPercentEncodedOctet(in: candidate)
+            || containsMalformedPercentEscape(in: candidate)
+    }
+
+    private static func containsMalformedPercentEscape(in value: String) -> Bool {
+        let bytes = Array(value.utf8)
+        var index = 0
+        while index < bytes.count {
+            guard bytes[index] == 0x25 else {
+                index += 1
+                continue
+            }
+            guard index + 2 < bytes.count,
+                  isHexDigit(bytes[index + 1]),
+                  isHexDigit(bytes[index + 2])
+            else {
+                return true
+            }
+
+            index += 3
+        }
+        return false
+    }
+
+    private static func containsEmbeddedURLReferenceShape(in path: String) -> Bool {
         guard !path.contains("://") else {
             return true
         }
@@ -918,7 +963,10 @@ enum NetworkPrivacySanitizer {
             if path[authorityStart ..< authorityEnd].contains("@") {
                 return true
             }
-            markerSearchStart = marker.upperBound
+            // Advance by one slash so a path prefix followed by an embedded `//authority`
+            // is checked as well. Advancing past both slashes misses overlapping runs such
+            // as `///user@host`, where the authority starts at the second slash.
+            markerSearchStart = path.index(after: marker.lowerBound)
         }
 
         return false
@@ -963,7 +1011,7 @@ enum NetworkPrivacySanitizer {
         else {
             return "<url-unavailable>"
         }
-        guard containsEmbeddedURLReference(in: components.path) == false else {
+        guard containsEmbeddedURLReference(in: components.percentEncodedPath) == false else {
             return "<redacted>"
         }
 
@@ -971,6 +1019,10 @@ enum NetworkPrivacySanitizer {
     }
 
     private static func urlShape(from source: URLComponents) -> String {
+        guard containsEmbeddedURLReference(in: source.percentEncodedPath) == false else {
+            return "<redacted>"
+        }
+
         let path = source.percentEncodedPath
         let base: String
         if let scheme = source.scheme?.lowercased(), scheme == "file" {

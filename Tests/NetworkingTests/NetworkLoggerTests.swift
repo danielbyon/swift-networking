@@ -1704,6 +1704,144 @@ struct NetworkLoggerTests {
         return RequestID(rawValue: rawValue)
     }
 
+    @Test("Encoded embedded URLs are redacted across request, redirect, and header diagnostics")
+    func encodedEmbeddedURLsAreRedactedAcrossDiagnosticPaths() throws {
+        let locationName = try #require(HTTPField.Name("Location"), "The Location header name must be valid")
+        let contentLocationName = try #require(
+            HTTPField.Name("Content-Location"),
+            "The Content-Location header name must be valid",
+        )
+        let refererName = try #require(HTTPField.Name("Referer"), "The Referer header name must be valid")
+        let linkName = try #require(HTTPField.Name("Link"), "The Link header name must be valid")
+        var headers = HTTPFields()
+        headers[locationName] = "https://safe.example/%252F%252FLOCATION-USER:LOCATION-PASSWORD@private.example/path"
+            + "?token=LOCATION-QUERY-SECRET"
+        headers[contentLocationName] = "https://safe.example/path,%68%74%74%70%73%3A%2F%2F"
+            + "CONTENT-USER:CONTENT-PASSWORD@private.example/path?token=CONTENT-QUERY-SECRET"
+        headers[refererName] = "https://safe.example/%2F%2FREFERER-USER:REFERER-PASSWORD@private.example/path"
+        headers[linkName] = "<https://safe.example/%252F%252FLINK-USER:LINK-PASSWORD@private.example/path>"
+            + "; rel=next"
+
+        let requestID = makeRequestID()
+        let timestamp = Date(timeIntervalSince1970: 1_800_000_000)
+        let formatter = NetworkLoggerFormatter(configuration: .init())
+        func formatAttempt(path: String, headerFields: HTTPFields) -> String {
+            let request = HTTPRequest(
+                method: .get,
+                scheme: "https",
+                authority: "safe.example",
+                path: path,
+                headerFields: headerFields,
+            )
+            return formatter.format(.attemptStarted(AttemptStartedEvent(
+                requestID: requestID,
+                timestamp: timestamp,
+                requestContext: RequestContext(),
+                attemptNumber: 1,
+                request: request,
+            )))
+            .message
+        }
+
+        let attemptMessage = formatAttempt(
+            path: "/%2F%2FATTEMPT-USER:ATTEMPT-PASSWORD@private.example/path",
+            headerFields: headers,
+        )
+        let redirectRequest = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "safe.example",
+            path: "/%252F%252FREDIRECT-USER:REDIRECT-PASSWORD@private.example/path",
+            headerFields: HTTPFields(),
+        )
+        let redirectMessage = formatter.format(.redirectDecision(RedirectDecisionEvent(
+            requestID: requestID,
+            timestamp: timestamp,
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            redirectOrdinal: 1,
+            httpResponse: makeResponse(),
+            proposedRequest: redirectRequest,
+            decision: .reject,
+        )))
+        .message
+        let malformedMessage = try messageForRequestHeader(
+            "Location",
+            value: "https://safe.example/path,%ZZ%252F%252FMALFORMED-USER:"
+                + "MALFORMED-PASSWORD@private.example/path",
+        )
+        let ordinaryEncodedPathMessage = formatAttempt(path: "/safe%2Fencoded-segment//v1", headerFields: HTTPFields())
+
+        #expect(attemptMessage.contains("url=<redacted>"))
+        #expect(redirectMessage.contains("url=<redacted>"))
+        #expect(attemptMessage.contains(#"location="<redacted>""#))
+        #expect(attemptMessage.contains(#"content-location="<redacted>""#))
+        #expect(attemptMessage.contains(#"referer="<redacted>""#))
+        #expect(attemptMessage.contains(#"link="<redacted>""#))
+        #expect(malformedMessage.contains(#"location="<redacted>""#))
+        #expect(ordinaryEncodedPathMessage.contains("safe%2Fencoded-segment//v1"))
+
+        let messages = [attemptMessage, redirectMessage, malformedMessage]
+        for secret in [
+            "ATTEMPT-USER",
+            "ATTEMPT-PASSWORD",
+            "REDIRECT-USER",
+            "REDIRECT-PASSWORD",
+            "LOCATION-USER",
+            "LOCATION-PASSWORD",
+            "LOCATION-QUERY-SECRET",
+            "CONTENT-USER",
+            "CONTENT-PASSWORD",
+            "CONTENT-QUERY-SECRET",
+            "REFERER-USER",
+            "REFERER-PASSWORD",
+            "LINK-USER",
+            "LINK-PASSWORD",
+            "MALFORMED-USER",
+            "MALFORMED-PASSWORD",
+        ] {
+            #expect(messages.joined().contains(secret) == false)
+        }
+    }
+
+    @Test("Set-Cookie2 is mandatory-sensitive in response and localized error diagnostics")
+    func setCookie2IsMandatorySensitiveAcrossDiagnosticSurfaces() throws {
+        let fieldName = try #require(HTTPField.Name("Set-Cookie2"), "The Set-Cookie2 header name must be valid")
+        var responseHeaders = HTTPFields()
+        responseHeaders[fieldName] = "SESSION=SET-COOKIE2-SESSION-SECRET; Path=/; HttpOnly"
+        let response = HTTPResponse(status: 503, headerFields: responseHeaders)
+        let requestID = makeRequestID()
+        let event = NetworkEvent.responseReceived(ResponseReceivedEvent(
+            requestID: requestID,
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: makeRequest(),
+            httpResponse: response,
+            normalizedMetrics: NormalizedAttemptMetrics(duration: .milliseconds(1)),
+            rawTaskMetrics: nil,
+        ))
+        let defaultMessage = NetworkLoggerFormatter(configuration: .init()).format(event).message
+        let customConfigurationMessage = NetworkLoggerFormatter(configuration: .init(
+            additionalSensitiveHeaders: ["x-private-header"],
+        ))
+        .format(event)
+        .message
+        let validationError = ResponseValidationError(
+            httpResponse: response,
+            retainedBody: nil,
+            requestID: requestID,
+            attempts: [],
+            reason: nil,
+        )
+        let errorDescription = validationError.errorDescription ?? ""
+
+        for diagnostic in [defaultMessage, customConfigurationMessage, errorDescription] {
+            #expect(diagnostic.contains("set-cookie2=<redacted>"))
+            #expect(diagnostic.contains("SET-COOKIE2-SESSION-SECRET") == false)
+        }
+    }
+
     private func messageForRequestHeader(_ name: String, value: String) throws -> String {
         let fieldName = try #require(HTTPField.Name(name), "The test header name must be valid")
         var headers = HTTPFields()
