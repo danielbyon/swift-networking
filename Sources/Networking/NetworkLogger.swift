@@ -730,7 +730,7 @@ enum NetworkPrivacySanitizer {
     private static func isUnambiguousSingleURLValue(_ value: String, components: URLComponents) -> Bool {
         guard rawQueryNamesAreWellFormed(in: value),
               value.unicodeScalars.contains(where: { $0.value <= 0x20 || $0.value == 0x7f }) == false,
-              containsUnsafeSchemeRelativeAuthority(in: value, components: components) == false,
+              containsUnsafeURLAuthority(in: value, components: components) == false,
               containsEmbeddedURLReference(in: components.percentEncodedPath) == false
         else {
             return false
@@ -739,22 +739,27 @@ enum NetworkPrivacySanitizer {
         return queryContainsURLReferenceInName(components.percentEncodedQuery) == false
     }
 
-    /// Rejects scheme-relative authorities that acquire userinfo delimiters after percent decoding.
-    private static func containsUnsafeSchemeRelativeAuthority(
+    /// Rejects absolute and scheme-relative authorities that contain or acquire userinfo delimiters.
+    private static func containsUnsafeURLAuthority(
         in value: String,
-        components: URLComponents,
+        components: URLComponents?,
     ) -> Bool {
-        guard components.scheme == nil, value.hasPrefix("//") else {
+        let authorityStart: String.Index
+        if value.hasPrefix("//") {
+            authorityStart = value.index(value.startIndex, offsetBy: 2)
+        } else if let schemeEnd = value.firstIndex(of: ":"),
+                  ["http", "https"].contains(String(value[..<schemeEnd]).lowercased()),
+                  value[value.index(after: schemeEnd)...].hasPrefix("//") {
+            authorityStart = value.index(schemeEnd, offsetBy: 3)
+        } else {
             return false
         }
-        guard components.user == nil,
-              components.password == nil,
-              components.host?.contains("@") != true
-        else {
+
+        if let components,
+           components.user != nil || components.password != nil || components.host?.contains("@") == true {
             return true
         }
 
-        let authorityStart = value.index(value.startIndex, offsetBy: 2)
         let authorityEnd = value[authorityStart...].firstIndex(where: { "/?#".contains($0) }) ?? value.endIndex
         var authority = String(value[authorityStart ..< authorityEnd])
         for _ in 0 ..< 8 {
@@ -1006,10 +1011,14 @@ enum NetworkPrivacySanitizer {
     }
 
     private static func urlShape(from value: String) -> String {
-        guard rawQueryNamesAreWellFormed(in: value),
-              let components = URLComponents(string: value)
-        else {
+        guard rawQueryNamesAreWellFormed(in: value) else {
             return "<url-unavailable>"
+        }
+        guard let components = URLComponents(string: value) else {
+            return containsUnsafeURLAuthority(in: value, components: nil) ? "<redacted>" : "<url-unavailable>"
+        }
+        guard containsUnsafeURLAuthority(in: value, components: components) == false else {
+            return "<redacted>"
         }
         guard containsEmbeddedURLReference(in: components.percentEncodedPath) == false else {
             return "<redacted>"

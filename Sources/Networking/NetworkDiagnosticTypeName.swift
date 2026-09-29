@@ -189,9 +189,8 @@ enum NetworkDiagnosticTypeName {
 
     private static func isRuntimeTypeContextSegment(_ value: Substring) -> Bool {
         let lowercasedValue = value.lowercased()
-        return value.contains("$")
-            || lowercasedValue.contains("0x")
-            || lowercasedValue.contains("context at")
-            || lowercasedValue.contains("function at")
+        return lowercasedValue.hasPrefix("(unknown context at")
+            || lowercasedValue.hasPrefix("(function at")
+            || lowercasedValue.hasPrefix("(context at")
     }
 }

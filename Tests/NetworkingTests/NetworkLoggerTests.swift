@@ -163,12 +163,20 @@ struct NetworkLoggerTests {
 
     @Test("Request URLs, URL headers, and sensitive headers are sanitized")
     func requestAndHeaderValuesAreSanitized() {
+        let fixtureRequest = makeRequest()
+        let request = HTTPRequest(
+            method: fixtureRequest.method,
+            scheme: fixtureRequest.scheme,
+            authority: "example.com:8443",
+            path: fixtureRequest.path,
+            headerFields: fixtureRequest.headerFields,
+        )
         let event = NetworkEvent.attemptStarted(AttemptStartedEvent(
             requestID: makeRequestID(),
             timestamp: Date(timeIntervalSince1970: 1_800_000_000),
             requestContext: RequestContext(),
             attemptNumber: 2,
-            request: makeRequest(),
+            request: request,
         ))
         let formatter = NetworkLoggerFormatter(configuration: .init(
             additionalSensitiveHeaders: ["X-Api-Key"],
@@ -432,7 +440,7 @@ struct NetworkLoggerTests {
         #expect(!message.contains("SECOND-URL-USER"))
         #expect(!message.contains("SECOND-URL-PASSWORD"))
         #expect(!message.contains("MULTI-URL-QUERY-SECRET"))
-        #expect(message.contains("link=\"<https://link.example/next?token=<redacted>>\""))
+        #expect(message.contains(#"link="<redacted>""#))
         #expect(!message.contains("LINK-USER"))
         #expect(!message.contains("LINK-PASSWORD"))
         #expect(!message.contains("LINK-QUERY-SECRET"))
@@ -564,7 +572,7 @@ struct NetworkLoggerTests {
         ))
         let credentialMessage = NetworkLoggerFormatter(configuration: .init()).format(credentialEvent).message
 
-        #expect(credentialMessage.contains("location=\"https://example.com/path?token=<redacted>\""))
+        #expect(credentialMessage.contains(#"location="<redacted>""#))
         #expect(!credentialMessage.contains("LOCATION-USER"))
         #expect(!credentialMessage.contains("LOCATION-PASSWORD"))
         #expect(!credentialMessage.contains("LOCATION-QUERY-SECRET"))
@@ -658,6 +666,90 @@ struct NetworkLoggerTests {
             #expect(!message.contains("SCHEME-RELATIVE-USER"))
             #expect(!message.contains("SCHEME-RELATIVE-PASSWORD"))
             #expect(!message.contains("SCHEME-RELATIVE-QUERY-SECRET"))
+        }
+    }
+
+    @Test("Encoded userinfo in absolute URL authorities is redacted on every URL path")
+    func encodedAbsoluteAuthorityUserinfoIsRedactedAcrossDiagnostics() throws {
+        let locationMessage = try messageForRequestHeader(
+            "Location",
+            value: "https://LOCATION-SINGLE-USER%3ALOCATION-SINGLE-PASSWORD%40private.example/path",
+        )
+        let contentLocationMessage = try messageForRequestHeader(
+            "Content-Location",
+            value: "https://CONTENT-DOUBLE-USER%253ACONTENT-DOUBLE-PASSWORD%2540private.example/path",
+        )
+        let refererMessage = try messageForRequestHeader(
+            "Referer",
+            value: "//REFERER-SINGLE-USER%3AREFERER-SINGLE-PASSWORD%40private.example/path",
+        )
+        let doubleEncodedRefererMessage = try messageForRequestHeader(
+            "Referer",
+            value: "//REFERER-DOUBLE-USER%253AREFERER-DOUBLE-PASSWORD%2540private.example/path",
+        )
+        let linkMessage = try messageForRequestHeader(
+            "Link",
+            value: "<https://LINK-SINGLE-USER%3ALINK-SINGLE-PASSWORD%40private.example/path>; rel=next, "
+                + "<https://LINK-DOUBLE-USER%253ALINK-DOUBLE-PASSWORD%2540private.example/next>; rel=prev, "
+                + "<//LINK-RELATIVE-SINGLE-USER%3ALINK-RELATIVE-SINGLE-PASSWORD%40private.example/path>; rel=preload, "
+                + "<//LINK-RELATIVE-DOUBLE-USER%253ALINK-RELATIVE-DOUBLE-PASSWORD%2540private.example/next>; rel=next",
+        )
+
+        let requestMessage = messageForAuthority(
+            "REQUEST-SINGLE-USER%3AREQUEST-SINGLE-PASSWORD%40private.example",
+        )
+        let rawAuthorityMessage = messageForAuthority("RAW-USER:RAW-PASSWORD@private.example")
+        let redirectMessage = messageForRedirectAuthority(
+            "REDIRECT-DOUBLE-USER%253AREDIRECT-DOUBLE-PASSWORD%2540private.example",
+        )
+        let safeMessage = try messageForRequestHeader("Location", value: "https://cdn.example/path")
+
+        #expect(locationMessage.contains(#"location="<redacted>""#))
+        #expect(contentLocationMessage.contains(#"content-location="<redacted>""#))
+        #expect(refererMessage.contains(#"referer="<redacted>""#))
+        #expect(doubleEncodedRefererMessage.contains(#"referer="<redacted>""#))
+        #expect(linkMessage.contains(#"link="<redacted>,<redacted>,<redacted>,<redacted>""#))
+        #expect(requestMessage.contains("url=<redacted>"))
+        #expect(rawAuthorityMessage.contains("url=<redacted>"))
+        #expect(redirectMessage.contains("url=<redacted>"))
+        #expect(safeMessage.contains(#"location="https://cdn.example/path""#))
+
+        let messages = [
+            locationMessage,
+            contentLocationMessage,
+            refererMessage,
+            doubleEncodedRefererMessage,
+            linkMessage,
+            requestMessage,
+            rawAuthorityMessage,
+            redirectMessage,
+            safeMessage,
+        ]
+        for secret in [
+            "LOCATION-SINGLE-USER",
+            "LOCATION-SINGLE-PASSWORD",
+            "CONTENT-DOUBLE-USER",
+            "CONTENT-DOUBLE-PASSWORD",
+            "REFERER-SINGLE-USER",
+            "REFERER-SINGLE-PASSWORD",
+            "REFERER-DOUBLE-USER",
+            "REFERER-DOUBLE-PASSWORD",
+            "LINK-SINGLE-USER",
+            "LINK-SINGLE-PASSWORD",
+            "LINK-DOUBLE-USER",
+            "LINK-DOUBLE-PASSWORD",
+            "LINK-RELATIVE-SINGLE-USER",
+            "LINK-RELATIVE-SINGLE-PASSWORD",
+            "LINK-RELATIVE-DOUBLE-USER",
+            "LINK-RELATIVE-DOUBLE-PASSWORD",
+            "REQUEST-SINGLE-USER",
+            "REQUEST-SINGLE-PASSWORD",
+            "RAW-USER",
+            "RAW-PASSWORD",
+            "REDIRECT-DOUBLE-USER",
+            "REDIRECT-DOUBLE-PASSWORD",
+        ] {
+            #expect(messages.allSatisfy { !$0.contains(secret) })
         }
     }
 
@@ -1935,6 +2027,45 @@ struct NetworkLoggerTests {
             requestContext: RequestContext(),
             attemptNumber: 1,
             request: request,
+        ))
+
+        return NetworkLoggerFormatter(configuration: .init()).format(event).message
+    }
+
+    private func messageForAuthority(_ authority: String) -> String {
+        let request = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: authority,
+            path: "/resource",
+        )
+        let event = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: request,
+        ))
+
+        return NetworkLoggerFormatter(configuration: .init()).format(event).message
+    }
+
+    private func messageForRedirectAuthority(_ authority: String) -> String {
+        let proposedRequest = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: authority,
+            path: "/resource",
+        )
+        let event = NetworkEvent.redirectDecision(RedirectDecisionEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            redirectOrdinal: 1,
+            httpResponse: makeResponse(),
+            proposedRequest: proposedRequest,
+            decision: .reject,
         ))
 
         return NetworkLoggerFormatter(configuration: .init()).format(event).message

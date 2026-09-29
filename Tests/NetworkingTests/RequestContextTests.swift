@@ -86,6 +86,38 @@ struct RequestContextTests {
         }
     }
 
+    @Test("Diagnostic context keys preserve 0x identifiers in tuple generic arguments")
+    func tupleContextKeysPreserveHexLikeTypeNames() {
+        typealias FirstKey = GenericDiagnosticContextKey<(Key0xA, Int)>
+        typealias SecondKey = GenericDiagnosticContextKey<(Key0xB, Int)>
+
+        let representation = RequestContext()
+            .setting(FirstKey.self, value: "FIRST-TUPLE-VALUE")
+            .setting(SecondKey.self, value: "SECOND-TUPLE-VALUE")
+            .diagnosticRepresentation
+        let reversedRepresentation = RequestContext()
+            .setting(SecondKey.self, value: "SECOND-TUPLE-VALUE")
+            .setting(FirstKey.self, value: "FIRST-TUPLE-VALUE")
+            .diagnosticRepresentation
+        let names = representation.map(\.key)
+
+        #expect(representation.count == 2)
+        #expect(representation.map(\.value).contains("value=FIRST-TUPLE-VALUE"))
+        #expect(representation.map(\.value).contains("value=SECOND-TUPLE-VALUE"))
+        #expect(Set(names).count == 2)
+        #expect(names.contains(where: {
+            $0.contains("(") && $0.contains("Key0xA") && $0.contains(",") && $0.contains("Int)")
+        }))
+        #expect(names.contains(where: {
+            $0.contains("(") && $0.contains("Key0xB") && $0.contains(",") && $0.contains("Int)")
+        }))
+        #expect(representation == reversedRepresentation)
+        for name in names {
+            #expect(!name.contains("unknown context at"))
+            #expect(!name.contains("$"))
+        }
+    }
+
     @Test("Diagnostic context keys preserve unsupported symbol identity deterministically")
     func symbolContextKeysStayDistinct() {
         let first = RequestContext().setting(Diagnostic🐶ContextKey.self, value: "DOG-SYMBOL-VALUE")
