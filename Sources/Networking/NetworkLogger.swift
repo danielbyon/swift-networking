@@ -323,7 +323,14 @@ package struct NetworkLoggerFormatter: Sendable {
 
 /// Shared privacy rules for logger records and library-owned error descriptions.
 enum NetworkPrivacySanitizer {
-    static let mandatorySensitiveHeaderNames: Set = ["authorization", "cookie", "proxy-authorization", "set-cookie"]
+    static let mandatorySensitiveHeaderNames: Set = [
+        "authorization",
+        "authentication-info",
+        "cookie",
+        "proxy-authorization",
+        "proxy-authentication-info",
+        "set-cookie",
+    ]
 
     static func requestURLShape(_ request: HTTPRequest) -> String {
         guard let path = request.path else {
@@ -606,93 +613,9 @@ enum NetworkPrivacySanitizer {
     }
 
     static func errorIdentity(_ error: any Error) -> String {
-        let type = stableErrorTypeName(for: error)
+        let type = NetworkDiagnosticTypeName.stableName(for: Swift.type(of: error))
         let foundationError = error as NSError
         return "\(escape(type))(domain=<redacted>,code=\(foundationError.code))"
-    }
-
-    /// Returns one safe nominal type identifier without emitting reflected runtime context.
-    private static func stableErrorTypeName(for error: any Error) -> String {
-        let reflectedTypeName = String(describing: Swift.type(of: error))
-        let contextFreeTypeName = removingRuntimeTypeContextSegments(from: reflectedTypeName)
-        let outerNominalPath = contextFreeTypeName.prefix { $0 != "<" && $0 != "[" && $0 != "(" }
-        let finalComponent = outerNominalPath.split(separator: ".", omittingEmptySubsequences: true).last
-            ?? outerNominalPath[...]
-        let identifierBytes = finalComponent.utf8.prefix { byte in
-            (byte >= 65 && byte <= 90)
-                || (byte >= 97 && byte <= 122)
-                || (byte >= 48 && byte <= 57)
-                || byte == 95
-        }
-        let identifier = String(decoding: identifierBytes, as: UTF8.self)
-        guard let firstByte = identifier.utf8.first,
-              (firstByte >= 65 && firstByte <= 90)
-              || (firstByte >= 97 && firstByte <= 122)
-              || firstByte == 95,
-              identifier.lowercased() != "unknown"
-        else {
-            return "Error"
-        }
-
-        return identifier
-    }
-
-    /// Removes parenthesized compiler context or address segments from a reflected type name.
-    private static func removingRuntimeTypeContextSegments(from value: String) -> String {
-        var result = String()
-        result.reserveCapacity(value.utf8.count)
-        var index = value.startIndex
-
-        while index < value.endIndex {
-            if value[index] == "(" {
-                var contextIndex = index
-                var nestingDepth = 0
-                var contextEnd: String.Index?
-
-                while contextIndex < value.endIndex {
-                    switch value[contextIndex] {
-                    case "(":
-                        nestingDepth += 1
-                    case ")":
-                        nestingDepth -= 1
-                        if nestingDepth == 0 {
-                            contextEnd = contextIndex
-                        }
-                    default:
-                        break
-                    }
-
-                    if contextEnd != nil {
-                        break
-                    }
-                    value.formIndex(after: &contextIndex)
-                }
-
-                guard let contextEnd else {
-                    return ""
-                }
-
-                let contextEndIndex = value.index(after: contextEnd)
-                let contextSegment = value[index ..< contextEndIndex]
-                if isRuntimeTypeContextSegment(contextSegment) {
-                    index = contextEndIndex
-                    continue
-                }
-            }
-
-            result.append(value[index])
-            value.formIndex(after: &index)
-        }
-
-        return result
-    }
-
-    private static func isRuntimeTypeContextSegment(_ value: Substring) -> Bool {
-        let lowercasedValue = value.lowercased()
-        return value.contains("$")
-            || lowercasedValue.contains("0x")
-            || lowercasedValue.contains("context at")
-            || lowercasedValue.contains("function at")
     }
 
     static func escape(_ value: String) -> String {
@@ -756,7 +679,65 @@ enum NetworkPrivacySanitizer {
     }
 
     private static func quotedURLShape(from value: String) -> String {
-        quoted(urlShape(from: value))
+        guard let components = URLComponents(string: value),
+              isUnambiguousSingleURLValue(value, components: components)
+        else {
+            return quoted("<redacted>")
+        }
+
+        return quoted(urlShape(from: components))
+    }
+
+    /// Rejects raw ASCII whitespace/control characters and ambiguous URL references in the path or query names.
+    private static func isUnambiguousSingleURLValue(_ value: String, components: URLComponents) -> Bool {
+        guard value.unicodeScalars.contains(where: { $0.value <= 0x20 || $0.value == 0x7f }) == false,
+              containsEmbeddedURLReference(in: components.path) == false
+        else {
+            return false
+        }
+
+        return queryContainsURLReferenceInName(components.percentEncodedQuery) == false
+    }
+
+    /// Detects URL references in query names because the diagnostic renderer preserves those names.
+    private static func queryContainsURLReferenceInName(_ query: String?) -> Bool {
+        guard let query else {
+            return false
+        }
+
+        return query
+            .split(separator: "&", omittingEmptySubsequences: false)
+            .contains { pair in
+                let name = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
+                return containsURLReferenceShape(in: name)
+            }
+    }
+
+    private static func containsURLReferenceShape(in queryName: Substring) -> Bool {
+        queryName.contains("://") || queryName.contains("//")
+    }
+
+    private static func containsEmbeddedURLReference(in path: String) -> Bool {
+        guard !path.contains("://") else {
+            return true
+        }
+
+        var markerSearchStart = path.startIndex
+        while let marker = path.range(of: "//", range: markerSearchStart ..< path.endIndex) {
+            if marker.lowerBound > path.startIndex,
+               path[path.index(before: marker.lowerBound)] == "," {
+                return true
+            }
+
+            let authorityStart = marker.upperBound
+            let authorityEnd = path[authorityStart...].firstIndex(where: { "/?#".contains($0) }) ?? path.endIndex
+            if path[authorityStart ..< authorityEnd].contains("@") {
+                return true
+            }
+            markerSearchStart = marker.upperBound
+        }
+
+        return false
     }
 
     private static func quoted(_ value: String) -> String {
@@ -822,7 +803,8 @@ enum NetworkPrivacySanitizer {
             .lazy
             .map { pair in
                 let name = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
-                return "\(diagnosticQueryName(name))=<redacted>"
+                let diagnosticName = containsURLReferenceShape(in: name) ? "<redacted>" : diagnosticQueryName(name)
+                return "\(diagnosticName)=<redacted>"
             }
             .joined(separator: "&")
         return "\(base)?\(redactedQuery)"

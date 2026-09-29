@@ -31,7 +31,7 @@ struct RequestContextTests {
         #expect(replacement.context[AttemptLabelKey.self] == 7)
     }
 
-    @Test("Diagnostic context includes only opted-in keys with fully qualified type names")
+    @Test("Diagnostic context includes only opted-in keys with normalized type names")
     func diagnosticRepresentationOmitsOrdinaryContextValues() throws {
         let request = try makeRequest()
             .context(PrivateTokenKey.self, value: "must-not-appear")

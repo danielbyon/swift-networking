@@ -48,7 +48,7 @@ public struct RequestContext: Sendable {
 
     /// Returns diagnostic values recorded for keys that explicitly opt in.
     ///
-    /// The dictionary key is the fully qualified Swift type name of the context key.
+    /// The dictionary key is a qualified, normalized, address-free identifier for the context key type.
     package var diagnosticRepresentation: [String: String] {
         entries.values.reduce(into: [:]) { result, entry in
             guard let key = entry.diagnosticKey, let value = entry.diagnosticValue else {
@@ -74,7 +74,9 @@ public struct RequestContext: Sendable {
         var updatedEntries = entries
         updatedEntries[keyIdentifier] = Entry(
             value: value,
-            diagnosticKey: diagnosticValue.map { _ in String(reflecting: Key.self) },
+            diagnosticKey: diagnosticValue.map { _ in
+                NetworkDiagnosticTypeName.stableName(for: Key.self, includingNamespace: true)
+            },
             diagnosticValue: diagnosticValue,
         )
         return Self(entries: updatedEntries)

@@ -197,6 +197,30 @@ struct NetworkLoggerTests {
         #expect(!message.contains("API-KEY-SECRET"))
     }
 
+    @Test("Request URL query names cannot expose embedded URL credentials")
+    func requestURLQueryNamesCannotExposeEmbeddedURLCredentials() {
+        let request = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "example.com",
+            path: "/resource?next,https://REQUEST-URL-USER:REQUEST-URL-PASSWORD@private.example/path?token=REQUEST-URL-QUERY-SECRET",
+        )
+        let event = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: request,
+        ))
+
+        let message = NetworkLoggerFormatter(configuration: .init()).format(event).message
+
+        #expect(message.contains("<redacted>=<redacted>"))
+        #expect(!message.contains("REQUEST-URL-USER"))
+        #expect(!message.contains("REQUEST-URL-PASSWORD"))
+        #expect(!message.contains("REQUEST-URL-QUERY-SECRET"))
+    }
+
     @Test("Proxy-Authorization credentials are redacted by default")
     func proxyAuthorizationIsMandatorySensitiveByDefault() throws {
         let proxyAuthorizationName = try #require(
@@ -238,6 +262,55 @@ struct NetworkLoggerTests {
         #expect(!configuredMessage.contains("CALLER-CONFIG-SECRET"))
     }
 
+    @Test("Authentication-Info headers are mandatory-sensitive under all configurations")
+    func authenticationInfoHeadersAreMandatorySensitiveByDefault() throws {
+        let authenticationInfoName = try #require(
+            HTTPField.Name("Authentication-Info"),
+            "The Authentication-Info header name must be valid",
+        )
+        let proxyAuthenticationInfoName = try #require(
+            HTTPField.Name("Proxy-Authentication-Info"),
+            "The Proxy-Authentication-Info header name must be valid",
+        )
+        let additionalSecretName = try #require(
+            HTTPField.Name("X-Additional-Secret"),
+            "The additional test header name must be valid",
+        )
+        var headers = HTTPFields()
+        headers[authenticationInfoName] = "nextnonce=AUTHENTICATION-INFO-SECRET"
+        headers[proxyAuthenticationInfoName] = "nextnonce=PROXY-AUTHENTICATION-INFO-SECRET"
+        headers[additionalSecretName] = "ADDITIONAL-CONFIGURED-SECRET"
+        let request = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "example.com",
+            path: "/resource",
+            headerFields: headers,
+        )
+        let event = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: request,
+        ))
+        let defaultMessage = NetworkLoggerFormatter(configuration: .init()).format(event).message
+        let configuredMessage = NetworkLoggerFormatter(configuration: .init(
+            additionalSensitiveHeaders: ["x-additional-secret"],
+        ))
+        .format(event)
+        .message
+
+        for message in [defaultMessage, configuredMessage] {
+            #expect(message.contains("authentication-info=<redacted>"))
+            #expect(message.contains("proxy-authentication-info=<redacted>"))
+            #expect(!message.contains("AUTHENTICATION-INFO-SECRET"))
+            #expect(!message.contains("PROXY-AUTHENTICATION-INFO-SECRET"))
+        }
+        #expect(configuredMessage.contains("x-additional-secret=<redacted>"))
+        #expect(!configuredMessage.contains("ADDITIONAL-CONFIGURED-SECRET"))
+    }
+
     @Test("Generic header values containing multiple URLs are fully redacted")
     func genericHeaderContainingMultipleURLsIsRedacted() throws {
         let headerName = try #require(
@@ -275,6 +348,119 @@ struct NetworkLoggerTests {
         #expect(!message.contains("LINK-USER"))
         #expect(!message.contains("LINK-PASSWORD"))
         #expect(!message.contains("LINK-QUERY-SECRET"))
+    }
+
+    @Test("Ambiguous dedicated URL headers are redacted as whole values")
+    func ambiguousDedicatedURLHeadersAreFullyRedacted() throws {
+        let locationName = try #require(HTTPField.Name("Location"), "The Location header name must be valid")
+        let contentLocationName = try #require(
+            HTTPField.Name("Content-Location"),
+            "The Content-Location header name must be valid",
+        )
+        let refererName = try #require(HTTPField.Name("Referer"), "The Referer header name must be valid")
+        var headers = HTTPFields()
+        headers[locationName] = "https://first.example/path, //LOCATION-USER:LOCATION-PASSWORD@second.example/path?token=LOCATION-QUERY-SECRET"
+        headers[contentLocationName] = "https://first.example/path?next,https://CONTENT-USER:CONTENT-PASSWORD@second.example/path?token=CONTENT-QUERY-SECRET"
+        headers[refererName] = "https://first.example/path, https://REFERER-USER:REFERER-PASSWORD@second.example/path?token=REFERER-QUERY-SECRET"
+        let request = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "example.com",
+            path: "/resource",
+            headerFields: headers,
+        )
+        let event = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: request,
+        ))
+
+        let message = NetworkLoggerFormatter(configuration: .init()).format(event).message
+
+        #expect(message.contains("location=\"<redacted>\""))
+        #expect(message.contains("content-location=\"<redacted>\""))
+        #expect(message.contains("referer=\"<redacted>\""))
+        for secret in [
+            "LOCATION-USER",
+            "LOCATION-PASSWORD",
+            "LOCATION-QUERY-SECRET",
+            "CONTENT-USER",
+            "CONTENT-PASSWORD",
+            "CONTENT-QUERY-SECRET",
+            "REFERER-USER",
+            "REFERER-PASSWORD",
+            "REFERER-QUERY-SECRET",
+        ] {
+            #expect(!message.contains(secret))
+        }
+
+        var ordinaryHeaders = HTTPFields()
+        ordinaryHeaders[locationName] = "https://example.com/path//segment"
+        let ordinaryRequest = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "example.com",
+            path: "/resource",
+            headerFields: ordinaryHeaders,
+        )
+        let ordinaryEvent = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: ordinaryRequest,
+        ))
+        let ordinaryMessage = NetworkLoggerFormatter(configuration: .init()).format(ordinaryEvent).message
+
+        #expect(ordinaryMessage.contains("location=\"https://example.com/path//segment\""))
+
+        var credentialHeaders = HTTPFields()
+        credentialHeaders[locationName] = "https://LOCATION-USER:LOCATION-PASSWORD@example.com/path?token=LOCATION-QUERY-SECRET"
+        let credentialRequest = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "example.com",
+            path: "/resource",
+            headerFields: credentialHeaders,
+        )
+        let credentialEvent = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: credentialRequest,
+        ))
+        let credentialMessage = NetworkLoggerFormatter(configuration: .init()).format(credentialEvent).message
+
+        #expect(credentialMessage.contains("location=\"https://example.com/path?token=<redacted>\""))
+        #expect(!credentialMessage.contains("LOCATION-USER"))
+        #expect(!credentialMessage.contains("LOCATION-PASSWORD"))
+        #expect(!credentialMessage.contains("LOCATION-QUERY-SECRET"))
+
+        var nestedQueryHeaders = HTTPFields()
+        nestedQueryHeaders[locationName] = "https://safe.example/path?next=https://NESTED-URL-USER:NESTED-URL-PASSWORD@private.example/path?secret=NESTED-URL-QUERY-SECRET"
+        let nestedQueryRequest = HTTPRequest(
+            method: .get,
+            scheme: "https",
+            authority: "example.com",
+            path: "/resource",
+            headerFields: nestedQueryHeaders,
+        )
+        let nestedQueryEvent = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: RequestContext(),
+            attemptNumber: 1,
+            request: nestedQueryRequest,
+        ))
+        let nestedQueryMessage = NetworkLoggerFormatter(configuration: .init()).format(nestedQueryEvent).message
+
+        #expect(nestedQueryMessage.contains("location=\"https://safe.example/path?next=<redacted>\""))
+        #expect(!nestedQueryMessage.contains("NESTED-URL-USER"))
+        #expect(!nestedQueryMessage.contains("NESTED-URL-PASSWORD"))
+        #expect(!nestedQueryMessage.contains("NESTED-URL-QUERY-SECRET"))
     }
 
     @Test("Scheme-relative references are redacted from generic headers")
@@ -866,6 +1052,53 @@ struct NetworkLoggerTests {
         #expect(!firstMessage.contains("NetworkLoggerTests."))
         #expect(firstMessage.contains("domain=<redacted>"))
         #expect(firstMessage.contains("code="))
+        #expect(!firstMessage.contains("unknown context at $"))
+        #expect(!firstMessage.contains("context at"))
+        #expect(!firstMessage.contains("$"))
+        #expect(!firstMessage.contains("0x"))
+    }
+
+    @Test("Function-local diagnostic context key names remain distinct and address-free")
+    func functionLocalDiagnosticContextKeyNamesRemainDistinctAndAddressFree() {
+        enum FirstNamespace {
+            enum SharedDiagnosticKey: DiagnosticRequestContextKey {
+                typealias Value = String
+
+                static func diagnosticDescription(for value: String) -> String {
+                    "first=\(value)"
+                }
+            }
+        }
+        enum SecondNamespace {
+            enum SharedDiagnosticKey: DiagnosticRequestContextKey {
+                typealias Value = String
+
+                static func diagnosticDescription(for value: String) -> String {
+                    "second=\(value)"
+                }
+            }
+        }
+
+        let context = RequestContext()
+            .setting(FirstNamespace.SharedDiagnosticKey.self, value: "SAFE-FIRST-CONTEXT")
+            .setting(SecondNamespace.SharedDiagnosticKey.self, value: "SAFE-SECOND-CONTEXT")
+        let request = HTTPRequest(method: .get, scheme: "https", authority: "example.com", path: "/resource")
+        let event = NetworkEvent.attemptStarted(AttemptStartedEvent(
+            requestID: makeRequestID(),
+            timestamp: Date(timeIntervalSince1970: 1_800_000_000),
+            requestContext: context,
+            attemptNumber: 1,
+            request: request,
+        ))
+        let formatter = NetworkLoggerFormatter(configuration: .init())
+        let firstMessage = formatter.format(event).message
+        let secondMessage = formatter.format(event).message
+
+        #expect(firstMessage == secondMessage)
+        #expect(firstMessage.contains("FirstNamespace.SharedDiagnosticKey"))
+        #expect(firstMessage.contains("SecondNamespace.SharedDiagnosticKey"))
+        #expect(firstMessage.contains(#"first\=SAFE-FIRST-CONTEXT"#))
+        #expect(firstMessage.contains(#"second\=SAFE-SECOND-CONTEXT"#))
         #expect(!firstMessage.contains("unknown context at $"))
         #expect(!firstMessage.contains("context at"))
         #expect(!firstMessage.contains("$"))
