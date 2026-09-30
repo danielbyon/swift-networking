@@ -52,6 +52,22 @@ public struct RequestContext: Sendable {
         entries[ObjectIdentifier(key)]?.value as? Key.Value
     }
 
+    /// Compares a stored typed value using its already-resolved key identifier.
+    ///
+    /// - Parameters:
+    ///   - expected: The value to compare with the stored context value.
+    ///   - keyIdentifier: The identity of the context key that owns the value.
+    package func matches<Value: Sendable & Equatable>(
+        _ expected: Value,
+        forKeyIdentifier keyIdentifier: ObjectIdentifier,
+    ) -> Bool {
+        guard let value = entries[keyIdentifier]?.value as? Value else {
+            return false
+        }
+
+        return value == expected
+    }
+
     /// Returns opted-in values with normalized key names, retaining keys whose safe names collide.
     package var diagnosticRepresentation: [RequestContextDiagnosticEntry] {
         entries.values

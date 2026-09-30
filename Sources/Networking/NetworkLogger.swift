@@ -325,8 +325,8 @@ package struct NetworkLoggerFormatter: Sendable {
 }
 
 /// Shared privacy rules for logger records and library-owned error descriptions.
-enum NetworkPrivacySanitizer {
-    static let mandatorySensitiveHeaderNames: Set = [
+package enum NetworkPrivacySanitizer {
+    package static let mandatorySensitiveHeaderNames: Set = [
         "authorization",
         "authentication-info",
         "cookie",
@@ -336,7 +336,7 @@ enum NetworkPrivacySanitizer {
         "set-cookie2",
     ]
 
-    static func requestURLShape(_ request: HTTPRequest) -> String {
+    package static func requestURLShape(_ request: HTTPRequest) -> String {
         guard let path = request.path else {
             return "<url-unavailable>"
         }
@@ -371,7 +371,7 @@ enum NetworkPrivacySanitizer {
         return "\(scheme):<redacted>"
     }
 
-    static func headers(_ fields: HTTPFields, sensitiveHeaderNames: Set<String>) -> String {
+    package static func headers(_ fields: HTTPFields, sensitiveHeaderNames: Set<String>) -> String {
         let normalizedSensitiveHeaderNames = Set(sensitiveHeaderNames.map { $0.lowercased() })
         var renderedFields: [(String, String)] = []
         for field in fields {
@@ -656,7 +656,7 @@ enum NetworkPrivacySanitizer {
         return "\(escape(type))(domain=<redacted>,code=\(customError.errorCode))"
     }
 
-    static func escape(_ value: String) -> String {
+    package static func escape(_ value: String) -> String {
         let escapedDelimiters = value
             .replacing("\\", with: "\\\\")
             .replacing("\n", with: "\\n")
