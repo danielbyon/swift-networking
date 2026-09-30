@@ -80,6 +80,10 @@ Typed, Sendable request metadata that propagates through adapters, authenticatio
 
 Context is not a general dependency-injection environment.
 
+### NetworkLogger
+
+An optional adapter from lifecycle events to an application-supplied Apple Logger. It uses the existing NetworkEventObserver delivery path, sanitizes headers and query values by default, and only renders already-retained response bytes when a finite cap is explicitly configured.
+
 ## Operation model
 
 Endpoint has three construction modes:
