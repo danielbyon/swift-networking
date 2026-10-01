@@ -218,8 +218,32 @@ func requestMatcherAndRecordingObserveConfiguredAdapterMutation() async throws {
 @Test("Semantic JSON matching ignores object order but preserves arrays and exact numbers")
 func semanticJSONMatchingUsesDecodedJSONSemantics() async throws {
     let url = try #require(URL(string: "https://mock.example/json"))
-    let expected = Data(#"{"count":1.0,"items":[2,3],"name":"example"}"#.utf8)
-    let actual = Data(#"{"name":"example","items":[2,3],"count":1}"#.utf8)
+    let expected = Data(
+        #"""
+        {
+            "count": 1.0,
+            "integer": 1,
+            "exponent": 1e0,
+            "extreme": 1e-9999999999999999999999999999999999999999,
+            "zero": 0,
+            "items": [2, 3],
+            "name": "example"
+        }
+        """#.utf8,
+    )
+    let actual = Data(
+        #"""
+        {
+            "name": "example",
+            "items": [2, 3],
+            "zero": -0.0,
+            "extreme": 10e-10000000000000000000000000000000000000000,
+            "exponent": 1.0,
+            "integer": 1e0,
+            "count": 1
+        }
+        """#.utf8,
+    )
     let matcher = try RequestMatcher.jsonBody(expected)
     let stub = try NetworkStub(
         matching: matcher,
@@ -256,10 +280,65 @@ func semanticJSONMatchingRejectsArrayReorderingAndNearNumbers() async throws {
     }
 }
 
+@Test("Semantic JSON matching preserves arbitrary precision and extreme exponents")
+func semanticJSONMatchingPreservesLosslessNumbers() async throws {
+    let numberPairs = [
+        (
+            #"{"number":123456789012345678901234567890123456789012345}"#,
+            #"{"number":123456789012345678901234567890123456789012346}"#,
+        ),
+        (
+            #"{"number":12345678901234567890.1234567890123456789012345}"#,
+            #"{"number":12345678901234567890.1234567890123456789012346}"#,
+        ),
+        (#"{"number":1e-400}"#, #"{"number":2e-400}"#),
+    ]
+
+    for (expected, actual) in numberPairs {
+        let url = try #require(URL(string: "https://mock.example/lossless-json"))
+        let stub = try NetworkStub(
+            matching: .jsonBody(Data(expected.utf8)),
+            response: .httpResponse(data: Data([1]), response: HTTPResponse(status: .init(code: 200))),
+        )
+        let transport = MockNetworkTransport(stubs: [stub])
+        let client = try NetworkClient.testing(transport: transport)
+
+        do {
+            _ = try await client.send(mockJSONRequest(url: url, body: Data(actual.utf8)))
+            Issue.record("Expected mathematically distinct JSON numbers not to match")
+        } catch let error as NetworkTestSupportError {
+            #expect(error.localizedDescription.contains("semantic JSON body mismatch"))
+        }
+    }
+}
+
+@Test("Semantic JSON matching rejects adjacent numeric tokens without a separator")
+func semanticJSONMatchingRejectsAdjacentNumericTokens() async throws {
+    let url = try #require(URL(string: "https://mock.example/malformed-number"))
+    let expected = Data(#"[0,0,0,0,0,0,0,0,0,0,0,0]"#.utf8)
+    let malformedActual = Data(#"[0,1-2,0,0,0,0,0,0,0,0,0,0]"#.utf8)
+    let stub = try NetworkStub(
+        matching: .jsonBody(expected),
+        response: .httpResponse(data: Data([1]), response: HTTPResponse(status: .init(code: 200))),
+    )
+    let transport = MockNetworkTransport(stubs: [stub])
+    let client = try NetworkClient.testing(transport: transport)
+
+    do {
+        _ = try await client.send(mockJSONRequest(url: url, body: malformedActual))
+        Issue.record("Expected malformed JSON numeric tokens not to match")
+    } catch let error as NetworkTestSupportError {
+        #expect(error.localizedDescription.contains("semantic JSON body mismatch"))
+    }
+}
+
 @Test("Semantic JSON matcher construction rejects malformed expected JSON")
 func semanticJSONMatcherRejectsMalformedExpectedJSON() {
     #expect(throws: RequestMatcherError.invalidJSON) {
         try RequestMatcher.jsonBody(Data("{bad json}".utf8))
+    }
+    #expect(throws: RequestMatcherError.invalidJSON) {
+        try RequestMatcher.jsonBody(Data("tru1".utf8))
     }
 }
 
@@ -553,6 +632,116 @@ func mockTransportRecordsCancellationAfterAttemptStart() async throws {
     #expect(recorded.first?.cancellationObserved == true)
     try await transport.verifyCancellationObserved()
     try await transport.verifyAllFiniteStubsConsumed()
+}
+
+@Test("Cancellation preserves file metadata captured before the matcher runs")
+func mockTransportCancellationPreservesCapturedFileMetadata() async throws {
+    let url = try #require(URL(string: "https://mock.example/cancel-file"))
+    let fileURL = FileManager.default
+        .temporaryDirectory
+        .appendingPathComponent("swift-networking-cancel-body-\(UUID().uuidString)")
+    let payload = Data([1, 2, 3, 4, 5])
+    try payload.write(to: fileURL)
+    defer { try? FileManager.default.removeItem(at: fileURL) }
+    let enteredMatcher = DispatchSemaphore(value: 0)
+    let releaseMatcher = DispatchSemaphore(value: 0)
+    let stub = try NetworkStub(
+        matching: .custom { _ in
+            enteredMatcher.signal()
+            releaseMatcher.wait()
+            return true
+        },
+        response: .httpResponse(data: Data([1]), response: HTTPResponse(status: .init(code: 200))),
+    )
+    let transport = MockNetworkTransport(stubs: [stub])
+    let client = try NetworkClient.testing(transport: transport)
+    let endpoint = Endpoint<Never, URL, Data>.data(
+        method: .put,
+        route: .absolute(url),
+        body: .file(contentType: "application/octet-stream"),
+        response: .data,
+    )
+    let networkTask = client.task(for: Request(endpoint: endpoint, body: fileURL))
+    let waiter = Task { try await networkTask.value }
+
+    await withCheckedContinuation { continuation in
+        DispatchQueue.global().async {
+            enteredMatcher.wait()
+            continuation.resume()
+        }
+    }
+    try FileManager.default.removeItem(at: fileURL)
+    networkTask.cancel()
+    releaseMatcher.signal()
+
+    do {
+        _ = try await waiter.value
+        Issue.record("Expected cancellation to reach the mock transport")
+    } catch is CancellationError {}
+
+    let recorded = try #require(await transport.recordedRequests().first)
+    #expect(recorded.cancellationObserved)
+    #expect(recorded.preparedBodyFileSize == UInt64(payload.count))
+    try await transport.verifyCancellationObserved()
+}
+
+@Test("Full URL matching rejects absent components while path and query remain usable")
+func fullURLMatcherRejectsMissingSchemeAndAuthority() async throws {
+    let url = try #require(URL(string: "https://matcher.invalid/malformed?state=one"))
+
+    for removesScheme in [true, false] {
+        let adapter = AnyRequestAdapter(adapt: { context in
+            var request = context.request
+            if removesScheme {
+                request.scheme = nil
+            } else {
+                request.authority = nil
+            }
+            return request
+        })
+        let configuration = NetworkClient.Configuration().withRequestAdapter(adapter)
+        let urlStub = try NetworkStub(
+            matching: .url(url),
+            response: .httpResponse(data: Data([1]), response: HTTPResponse(status: .init(code: 200))),
+        )
+        let urlTransport = MockNetworkTransport(stubs: [urlStub])
+        let urlClient = try NetworkClient.testing(configuration: configuration, transport: urlTransport)
+
+        do {
+            _ = try await urlClient.send(mockDataRequest(url: url))
+            Issue.record("Expected a full URL matcher to reject an absent URL component")
+        } catch let error as NetworkTestSupportError {
+            guard case let .unmatchedRequest(_, activeStubs) = error else {
+                Issue.record("Expected a full URL mismatch diagnostic")
+                continue
+            }
+
+            #expect(activeStubs.first?.reasons == [.url])
+        }
+
+        let recordedURLRequest = try #require(await urlTransport.recordedRequests().first)
+        if removesScheme {
+            #expect(recordedURLRequest.httpRequest.scheme == nil)
+        } else {
+            #expect(recordedURLRequest.httpRequest.authority == nil)
+        }
+
+        let pathAndQueryStub = try NetworkStub(
+            matching: .path("/malformed").and(.query(
+                [URLQueryItem(name: "state", value: "one")],
+                semantics: .exact,
+            )),
+            response: .httpResponse(data: Data([2]), response: HTTPResponse(status: .init(code: 200))),
+        )
+        let pathAndQueryTransport = MockNetworkTransport(stubs: [pathAndQueryStub])
+        let pathAndQueryClient = try NetworkClient.testing(
+            configuration: configuration,
+            transport: pathAndQueryTransport,
+        )
+
+        let response = try await pathAndQueryClient.send(mockDataRequest(url: url))
+        #expect(response.value == Data([2]))
+    }
 }
 
 @Test("Explicit verification reports unused stubs and order mismatches without changing recordings")

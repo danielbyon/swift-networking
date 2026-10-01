@@ -5,7 +5,6 @@
 //  SPDX-License-Identifier: MIT
 //
 
-import CoreFoundation
 import Foundation
 import HTTPTypes
 import Networking
@@ -83,10 +82,14 @@ public struct RequestMatcher: Sendable {
     }
 
     /// Matches scheme, authority, path, and the encoded query of a complete URL.
+    ///
+    /// The transport-ready request must contain its own scheme and authority.
     public static func url(_ expected: URL) -> Self {
         let expectedShape = URLShape(url: expected)
         return Self { request in
-            guard let actualShape = URLShape(request: request.httpRequest),
+            guard request.httpRequest.scheme != nil,
+                  request.httpRequest.authority != nil,
+                  let actualShape = URLShape(request: request.httpRequest),
                   actualShape == expectedShape
             else {
                 return .url
@@ -173,12 +176,9 @@ public struct RequestMatcher: Sendable {
     /// Object key order and numeric spelling do not affect equality. Array order is significant,
     /// and numbers are compared exactly without a floating-point tolerance.
     public static func jsonBody(_ expected: Data) throws -> Self {
-        let expectedValue = try JSONSemanticValue.decode(expected)
+        let matchesJSON = try JSONSemanticMatcher.predicate(expected: expected)
         return Self { request in
-            guard let data = try? request.readBodyBytes(),
-                  let actualValue = try? JSONSemanticValue.decode(data),
-                  actualValue == expectedValue
-            else {
+            guard let data = try? request.readBodyBytes(), matchesJSON(data) else {
                 return .semanticJSONBody
             }
 
@@ -339,121 +339,4 @@ private func collectionMatches<Element: Equatable & Sendable>(
 
 private func headerValuePrecedes(_ left: HeaderValue, _ right: HeaderValue) -> Bool {
     left.name == right.name ? left.value < right.value : left.name < right.name
-}
-
-private enum JSONSemanticValue: Sendable, Equatable {
-    case null
-    case boolean(Bool)
-    case number(JSONNumber)
-    case string(String)
-    case array([JSONSemanticValue])
-    case object([String: JSONSemanticValue])
-
-    static func decode(_ data: Data) throws -> Self {
-        do {
-            let value = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
-            guard let result = makeValue(value) else {
-                throw RequestMatcherError.invalidJSON
-            }
-
-            return result
-        } catch {
-            throw RequestMatcherError.invalidJSON
-        }
-    }
-
-    private static func makeValue(_ value: Any) -> Self? {
-        if value is NSNull {
-            return .null
-        }
-        if let number = value as? NSNumber {
-            if CFGetTypeID(number) == CFBooleanGetTypeID() {
-                return .boolean(number.boolValue)
-            }
-            guard let exactNumber = JSONNumber(number.stringValue) else {
-                return nil
-            }
-
-            return .number(exactNumber)
-        }
-        if let string = value as? String {
-            return .string(string)
-        }
-        if let values = value as? [Any] {
-            let decoded = values.compactMap(makeValue)
-            return decoded.count == values.count ? .array(decoded) : nil
-        }
-        if let values = value as? [String: Any] {
-            var decoded: [String: Self] = [:]
-            for (key, value) in values {
-                guard let value = makeValue(value) else {
-                    return nil
-                }
-
-                decoded[key] = value
-            }
-            return .object(decoded)
-        }
-        return nil
-    }
-}
-
-private struct JSONNumber: Sendable, Equatable {
-    let isNegative: Bool
-    let digits: String
-    let exponent: Int
-
-    init?(_ source: String) {
-        var value = source[...]
-        let isNegative = value.first == "-"
-        if isNegative {
-            value = value.dropFirst()
-        }
-
-        let exponentParts = value.split(maxSplits: 1, whereSeparator: { $0 == "e" || $0 == "E" })
-        guard let significand = exponentParts.first else {
-            return nil
-        }
-
-        let explicitExponent: Int
-        if exponentParts.count == 2 {
-            guard let parsedExponent = Int(exponentParts[1]) else {
-                return nil
-            }
-
-            explicitExponent = parsedExponent
-        } else {
-            explicitExponent = 0
-        }
-
-        let decimalParts = significand.split(separator: ".", omittingEmptySubsequences: false)
-        guard decimalParts.count <= 2 else {
-            return nil
-        }
-
-        let fraction = decimalParts.count == 2 ? String(decimalParts[1]) : ""
-        var digits = decimalParts.map(String.init).joined()
-        guard !digits.isEmpty, digits.allSatisfy(\.isNumber) else {
-            return nil
-        }
-
-        var normalizedExponent = explicitExponent - fraction.count
-        while digits.count > 1, digits.first == "0" {
-            digits.removeFirst()
-        }
-        if digits.allSatisfy({ $0 == "0" }) {
-            self.isNegative = false
-            self.digits = "0"
-            exponent = 0
-            return
-        }
-        while digits.count > 1, digits.last == "0" {
-            digits.removeLast()
-            normalizedExponent += 1
-        }
-
-        self.isNegative = isNegative
-        self.digits = digits
-        exponent = normalizedExponent
-    }
 }

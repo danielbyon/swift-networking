@@ -113,6 +113,16 @@ public struct RecordedRequest: Sendable {
         self.cancellationObserved = cancellationObserved
     }
 
+    private init(copying request: Self, cancellationObserved: Bool) {
+        httpRequest = request.httpRequest
+        preparedBody = request.preparedBody
+        preparedBodyFileSize = request.preparedBodyFileSize
+        requestID = request.requestID
+        attemptNumber = request.attemptNumber
+        requestContext = request.requestContext
+        self.cancellationObserved = cancellationObserved
+    }
+
     /// Reads prepared body bytes explicitly; bodyless requests return empty data.
     ///
     /// File-backed bodies are read only when this method is called or a byte matcher is evaluated.
@@ -128,14 +138,7 @@ public struct RecordedRequest: Sendable {
     }
 
     package func observingCancellation() -> Self {
-        Self(
-            httpRequest: httpRequest,
-            preparedBody: preparedBody,
-            requestID: requestID,
-            attemptNumber: attemptNumber,
-            requestContext: requestContext,
-            cancellationObserved: true,
-        )
+        Self(copying: self, cancellationObserved: true)
     }
 }
 
