@@ -1,0 +1,31 @@
+Sources/NetworkingTestSupport/RequestMatcher.swift
+  s_48f70440e7a28a::t_988660ceff2685 85-86,90-92
+  s_48f70440e7a28a::t_be8e5625b785d9 179,181
+Sources/NetworkingTestSupport/MockNetworkTransport.swift
+  s_48f70440e7a28a::t_f2020cdb53496c 116-125,141
+Sources/NetworkingTestSupport/JSONSemanticMatcher.swift
+  s_48f70440e7a28a::t_be8e5625b785d9 1-425
+Tests/NetworkingTestSupportTests/MockNetworkTransportTests.swift
+  s_48f70440e7a28a::t_8bf96932bcb040 340-342
+  s_48f70440e7a28a::t_ab10d9e00631c8 283-314,637-639,642-717,719-722,728-745
+  s_48f70440e7a28a::t_7e7cd087611e30 640-641,718
+  s_48f70440e7a28a::t_3fc3080dfa892e 221-246,723-727
+  s_48f70440e7a28a::t_0efa4d0953bbd8 315-334
+  s_48f70440e7a28a::t_55b865c3660203 746
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dc3fc7af882cd810d0a32800d6c889d0cc6e390b",
+  "prompts": {},
+  "sessions": {
+    "s_48f70440e7a28a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f061-c319-7693-8b51-1c8c2fc447a4",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
