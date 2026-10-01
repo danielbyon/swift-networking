@@ -40,6 +40,24 @@ The shared lifecycle object for one logical execution.
 
 It exposes RequestID, multicast progress, an async throwing value, and explicit shared cancellation.
 
+### NetworkingTestSupport mock transport
+
+`MockNetworkTransport` is the public actor-backed transport test harness. `NetworkStub`,
+`RequestMatcher`, and `StubResponse` are immutable values; registration order, finite-use counts,
+attempt recordings, and cancellation observations belong to the mock actor. Matchers inspect the
+transport-ready request after general adapters and authentication. Unmatched requests fail in the
+mock and never reach live networking.
+
+Every actual transport attempt is recorded with its request ID, attempt number, context, and prepared
+body representation. File-backed bodies retain URL and size metadata until a matcher or explicit
+inspection reads their bytes. Download responses use library-owned temporary files and the normal
+validation, finalization, and `DownloadedFile` ownership path. Verification is explicit and checks
+finite stub use, recorded attempt order, or observed cancellation.
+
+The `NetworkTransport` protocol and production client transport initializer remain package-only.
+Applications construct a test client through `NetworkClient.testing(...)` in
+`NetworkingTestSupport`; `Networking` does not expose transport injection.
+
 ### Logical execution
 
 One invocation of send or task(for:).
