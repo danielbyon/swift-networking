@@ -270,31 +270,49 @@ private func finalizeSuccessfulDownload(
 }
 
 private enum TransportAttemptResult: Sendable {
-    case success(body: SuccessfulTransportBody, response: HTTPResponse, rawTaskMetrics: URLSessionTaskMetrics?)
-    case failure(error: any Error, rawTaskMetrics: URLSessionTaskMetrics?, didStartTask: Bool)
+    case success(
+        body: SuccessfulTransportBody,
+        response: HTTPResponse,
+        rawTaskMetrics: URLSessionTaskMetrics?,
+        normalizedMetrics: NormalizedAttemptMetrics? = nil,
+    )
+    case failure(
+        error: any Error,
+        rawTaskMetrics: URLSessionTaskMetrics?,
+        didStartTask: Bool,
+        normalizedMetrics: NormalizedAttemptMetrics? = nil,
+    )
     case redirectLimitExceeded(
         maximumRedirects: UInt,
         lastResponse: HTTPResponse?,
         rawTaskMetrics: URLSessionTaskMetrics?,
+        normalizedMetrics: NormalizedAttemptMetrics? = nil,
     )
 }
 
 extension NetworkTransportResult {
     fileprivate var attemptResult: TransportAttemptResult {
         switch self {
-        case let .success(data, response, rawTaskMetrics):
+        case let .success(data, response, rawTaskMetrics, normalizedMetrics):
             .success(
                 body: .data(data),
                 response: response,
                 rawTaskMetrics: rawTaskMetrics,
+                normalizedMetrics: normalizedMetrics,
             )
-        case let .failure(error, rawTaskMetrics, didStartTask):
-            .failure(error: error, rawTaskMetrics: rawTaskMetrics, didStartTask: didStartTask)
-        case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics):
+        case let .failure(error, rawTaskMetrics, didStartTask, normalizedMetrics):
+            .failure(
+                error: error,
+                rawTaskMetrics: rawTaskMetrics,
+                didStartTask: didStartTask,
+                normalizedMetrics: normalizedMetrics,
+            )
+        case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics, normalizedMetrics):
             .redirectLimitExceeded(
                 maximumRedirects: maximumRedirects,
                 lastResponse: lastResponse,
                 rawTaskMetrics: rawTaskMetrics,
+                normalizedMetrics: normalizedMetrics,
             )
         }
     }
@@ -303,15 +321,26 @@ extension NetworkTransportResult {
 extension NetworkTransportDownloadResult {
     fileprivate var attemptResult: TransportAttemptResult {
         switch self {
-        case let .success(file, response, rawTaskMetrics):
-            .success(body: .file(file), response: response, rawTaskMetrics: rawTaskMetrics)
-        case let .failure(error, rawTaskMetrics, didStartTask):
-            .failure(error: error, rawTaskMetrics: rawTaskMetrics, didStartTask: didStartTask)
-        case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics):
+        case let .success(file, response, rawTaskMetrics, normalizedMetrics):
+            .success(
+                body: .file(file),
+                response: response,
+                rawTaskMetrics: rawTaskMetrics,
+                normalizedMetrics: normalizedMetrics,
+            )
+        case let .failure(error, rawTaskMetrics, didStartTask, normalizedMetrics):
+            .failure(
+                error: error,
+                rawTaskMetrics: rawTaskMetrics,
+                didStartTask: didStartTask,
+                normalizedMetrics: normalizedMetrics,
+            )
+        case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics, normalizedMetrics):
             .redirectLimitExceeded(
                 maximumRedirects: maximumRedirects,
                 lastResponse: lastResponse,
                 rawTaskMetrics: rawTaskMetrics,
+                normalizedMetrics: normalizedMetrics,
             )
         }
     }
@@ -539,15 +568,16 @@ package struct URLSessionTransport: NetworkTransport {
         }
 
         switch await executeWithMetrics(request) {
-        case let .success(data, response, _):
+        case let .success(data, response, _, _):
             return (data, response)
-        case let .failure(error, _, _):
+        case let .failure(error, _, _, _):
             throw error
-        case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics):
+        case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics, suppliedNormalizedMetrics):
             let attempt = AttemptMetrics(
                 requestID: request.requestID,
                 attemptNumber: request.attemptNumber,
-                normalizedMetrics: NormalizedAttemptMetrics(taskMetrics: rawTaskMetrics),
+                normalizedMetrics: suppliedNormalizedMetrics
+                    ?? NormalizedAttemptMetrics(taskMetrics: rawTaskMetrics),
                 outcome: .redirectLimitExceeded,
                 diagnosticReason: nil,
                 rawTaskMetrics: rawTaskMetrics,
@@ -578,21 +608,32 @@ package struct URLSessionTransport: NetworkTransport {
         }
 
         switch await executeAttempt(request, progress: progress) {
-        case let .success(body: .data(data), response, rawTaskMetrics):
-            return .success(data: data, response: response, rawTaskMetrics: rawTaskMetrics)
-        case .success(body: .file, response: _, rawTaskMetrics: _):
+        case let .success(body: .data(data), response, rawTaskMetrics, normalizedMetrics):
+            return .success(
+                data: data,
+                response: response,
+                rawTaskMetrics: rawTaskMetrics,
+                normalizedMetrics: normalizedMetrics,
+            )
+        case .success(body: .file, response: _, rawTaskMetrics: _, normalizedMetrics: _):
             return .failure(
                 error: TransportExecutionError.responseBodyRepresentationMismatch,
                 rawTaskMetrics: nil,
                 didStartTask: true,
             )
-        case let .failure(error, rawTaskMetrics, didStartTask):
-            return .failure(error: error, rawTaskMetrics: rawTaskMetrics, didStartTask: didStartTask)
-        case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics):
+        case let .failure(error, rawTaskMetrics, didStartTask, normalizedMetrics):
+            return .failure(
+                error: error,
+                rawTaskMetrics: rawTaskMetrics,
+                didStartTask: didStartTask,
+                normalizedMetrics: normalizedMetrics,
+            )
+        case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics, normalizedMetrics):
             return .redirectLimitExceeded(
                 maximumRedirects: maximumRedirects,
                 lastResponse: lastResponse,
                 rawTaskMetrics: rawTaskMetrics,
+                normalizedMetrics: normalizedMetrics,
             )
         }
     }
@@ -610,21 +651,32 @@ package struct URLSessionTransport: NetworkTransport {
         }
 
         switch await executeAttempt(request, progress: progress) {
-        case let .success(body: .file(file), response, rawTaskMetrics):
-            return .success(file: file, response: response, rawTaskMetrics: rawTaskMetrics)
-        case .success(body: .data, response: _, rawTaskMetrics: _):
+        case let .success(body: .file(file), response, rawTaskMetrics, normalizedMetrics):
+            return .success(
+                file: file,
+                response: response,
+                rawTaskMetrics: rawTaskMetrics,
+                normalizedMetrics: normalizedMetrics,
+            )
+        case .success(body: .data, response: _, rawTaskMetrics: _, normalizedMetrics: _):
             return .failure(
                 error: TransportExecutionError.responseBodyRepresentationMismatch,
                 rawTaskMetrics: nil,
                 didStartTask: true,
             )
-        case let .failure(error, rawTaskMetrics, didStartTask):
-            return .failure(error: error, rawTaskMetrics: rawTaskMetrics, didStartTask: didStartTask)
-        case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics):
+        case let .failure(error, rawTaskMetrics, didStartTask, normalizedMetrics):
+            return .failure(
+                error: error,
+                rawTaskMetrics: rawTaskMetrics,
+                didStartTask: didStartTask,
+                normalizedMetrics: normalizedMetrics,
+            )
+        case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics, normalizedMetrics):
             return .redirectLimitExceeded(
                 maximumRedirects: maximumRedirects,
                 lastResponse: lastResponse,
                 rawTaskMetrics: rawTaskMetrics,
+                normalizedMetrics: normalizedMetrics,
             )
         }
     }
@@ -822,7 +874,7 @@ private final class URLSessionTaskStartControl: Sendable {
     }
 }
 
-private func expectedRequestBodyByteCount(_ execution: TransportExecution?) -> Int64? {
+package func expectedRequestBodyByteCount(_ execution: TransportExecution?) -> Int64? {
     guard let execution else {
         return nil
     }
@@ -851,9 +903,9 @@ private func expectedRequestBodyByteCount(_ execution: TransportExecution?) -> I
     }
 }
 
-struct RedirectLimitExceeded: Sendable {
-    let maximumRedirects: UInt
-    let lastResponse: HTTPResponse?
+package struct RedirectLimitExceeded: Sendable {
+    package let maximumRedirects: UInt
+    package let lastResponse: HTTPResponse?
 }
 
 private enum URLSessionTaskBody: Sendable {
@@ -957,9 +1009,7 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
         var downloadedFile: DownloadedFileStorage?
         var downloadFileAdoptionError: (any Error)?
         var response: URLResponse?
-        var followedRedirectCount: UInt = 0
-        var redirectOrdinal: UInt = 0
-        var redirectLimitExceeded: RedirectLimitExceeded?
+        var redirectState = RedirectEvaluationState()
 
         mutating func takeReadyWaiters() -> (
             URLSessionTaskMetrics??,
@@ -1104,68 +1154,40 @@ final class URLSessionTaskMetricsDelegate: NSObject, URLSessionTaskDelegate, Sen
         newRequest: URLRequest,
         completionHandler: (URLRequest?) -> Void,
     ) {
-        let redirectOrdinal = state.withLock { storage in
-            storage.redirectOrdinal += 1
-            return storage.redirectOrdinal
-        }
-
         guard let httpResponse = response.httpResponse else {
             completionHandler(nil)
             return
         }
-
-        let context = RedirectPolicy.Context(
-            currentRequest: task.currentRequest ?? initialRequest,
-            proposedRequest: newRequest,
-            httpResponse: httpResponse,
-            requestID: requestID,
-            requestContext: requestContext,
-            attemptNumber: attemptNumber,
-            redirectOrdinal: redirectOrdinal,
-        )
-        let decision = redirectPolicy.decision(for: context)
         guard let proposedHTTPRequest = newRequest.httpRequest else {
             preconditionFailure("URLSession supplied an invalid HTTP request for a redirect proposal.")
         }
 
-        if let eventExecution {
-            eventExecution.submit(
-                .redirectDecision(
-                    RedirectDecisionEvent(
-                        requestID: requestID,
-                        timestamp: eventExecution.delivery.timestamp(),
-                        requestContext: requestContext,
-                        attemptNumber: attemptNumber,
-                        redirectOrdinal: redirectOrdinal,
-                        httpResponse: httpResponse,
-                        proposedRequest: proposedHTTPRequest,
-                        decision: decision,
-                    ),
-                ),
+        let outcome = state.withLock { storage in
+            evaluateRedirectProposal(
+                state: &storage.redirectState,
+                policy: redirectPolicy,
+                currentRequest: task.currentRequest ?? initialRequest,
+                proposedRequest: newRequest,
+                httpResponse: httpResponse,
+                requestID: requestID,
+                requestContext: requestContext,
+                attemptNumber: attemptNumber,
+                proposedHTTPRequest: proposedHTTPRequest,
+                eventExecution: eventExecution,
             )
         }
-        guard decision == .follow else {
+
+        switch outcome {
+        case .follow:
+            completionHandler(newRequest)
+        case .reject,
+             .limitExceeded:
             completionHandler(nil)
-            return
         }
-
-        let exceededLimit = state.withLock { storage in
-            guard storage.followedRedirectCount >= redirectPolicy.maximumRedirects else {
-                storage.followedRedirectCount += 1
-                return false
-            }
-
-            storage.redirectLimitExceeded = RedirectLimitExceeded(
-                maximumRedirects: redirectPolicy.maximumRedirects,
-                lastResponse: httpResponse,
-            )
-            return true
-        }
-        completionHandler(exceededLimit ? nil : newRequest)
     }
 
     func redirectLimitExceeded() -> RedirectLimitExceeded? {
-        state.withLock(\.redirectLimitExceeded)
+        state.withLock(\.redirectState.limitExceeded)
     }
 
     func urlSession(
@@ -2082,9 +2104,15 @@ public final class NetworkClient: Sendable {
                 )
 
                 switch transportResult {
-                case let .redirectLimitExceeded(maximumRedirects, lastResponse, rawTaskMetrics):
+                case let .redirectLimitExceeded(
+                    maximumRedirects,
+                    lastResponse,
+                    rawTaskMetrics,
+                    suppliedNormalizedMetrics,
+                ):
                     attemptNumber = nextAttemptNumber
-                    let normalizedMetrics = NormalizedAttemptMetrics(taskMetrics: rawTaskMetrics)
+                    let normalizedMetrics = suppliedNormalizedMetrics
+                        ?? NormalizedAttemptMetrics(taskMetrics: rawTaskMetrics)
                     attempts.append(
                         AttemptMetrics(
                             requestID: requestID,
@@ -2118,9 +2146,15 @@ public final class NetworkClient: Sendable {
                     )
                     throw error
 
-                case let .success(body: successfulBody, response: httpResponse, rawTaskMetrics):
+                case let .success(
+                    body: successfulBody,
+                    response: httpResponse,
+                    rawTaskMetrics,
+                    suppliedNormalizedMetrics,
+                ):
                     attemptNumber = nextAttemptNumber
-                    let normalizedMetrics = NormalizedAttemptMetrics(taskMetrics: rawTaskMetrics)
+                    let normalizedMetrics = suppliedNormalizedMetrics
+                        ?? NormalizedAttemptMetrics(taskMetrics: rawTaskMetrics)
                     eventExecution.submit(
                         .responseReceived(
                             ResponseReceivedEvent(
@@ -2309,13 +2343,14 @@ public final class NetworkClient: Sendable {
                         retainedBody: retainedBody,
                     )
 
-                case let .failure(error, rawTaskMetrics, didStartTask):
+                case let .failure(error, rawTaskMetrics, didStartTask, suppliedNormalizedMetrics):
                     guard didStartTask else {
                         throw error
                     }
 
                     attemptNumber = nextAttemptNumber
-                    let normalizedMetrics = NormalizedAttemptMetrics(taskMetrics: rawTaskMetrics)
+                    let normalizedMetrics = suppliedNormalizedMetrics
+                        ?? NormalizedAttemptMetrics(taskMetrics: rawTaskMetrics)
                     eventExecution.submit(
                         .attemptFailed(
                             AttemptFailedEvent(

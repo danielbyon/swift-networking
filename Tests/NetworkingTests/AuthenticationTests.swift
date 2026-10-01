@@ -784,9 +784,9 @@ private actor AuthenticationScriptedTransport: NetworkTransport {
         switch result {
         case .success,
              .redirectLimitExceeded,
-             .failure(_, _, true):
+             .failure(_, _, true, _):
             progress.startAttempt(attemptNumber: request.attemptNumber, expectedBytesToSend: nil)
-        case .failure(_, _, false):
+        case .failure(_, _, false, _):
             break
         }
         return result
