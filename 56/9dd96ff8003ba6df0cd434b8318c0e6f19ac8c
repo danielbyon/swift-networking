@@ -1,0 +1,128 @@
+Sources/NetworkingTestSupport/MockNetworkTransport.swift
+  s_7a6e5a1c75951d::t_c1dec792a7db86 42-50,54-64,69-71,79-81
+  s_7a6e5a1c75951d::t_64c31008a5aa7f 387-390,392-407,411,414-422,427-439,441-442,451-456,458,461,468-469,473-475,477,488-495,534-549,566-572,574,581,593,600-608,620,624-625,627-628,630-639,641-646,648,650-663,667-693,698-706,708-734,738-747
+  s_7a6e5a1c75951d::t_0c52bed192b7ac 426,440,443-450,467,476,479,481-486
+  s_7a6e5a1c75951d::t_94c79485c08ffd 10,95-124,127-139
+  s_7a6e5a1c75951d::t_78795958d2cbbd 555-565,591-592,594-599,611,614-619,621-622,626,629
+  s_7a6e5a1c75951d::t_78bc207e5b58e7 697
+  s_7a6e5a1c75951d::t_c21172ccd3a28e 462,640,647,649
+  s_7a6e5a1c75951d::t_36dabf638c1483 694-696,707
+  s_7a6e5a1c75951d::t_ff048f71fdac39 423-424,464-465
+  s_7a6e5a1c75951d::t_72deef84481cf4 749,794
+  s_7a6e5a1c75951d::t_6141a87debf351 255,279-280
+  s_7a6e5a1c75951d::t_8edc44c99eefc7 496-505,509-533
+  s_7a6e5a1c75951d::t_d590e506899c5c 125-126
+  s_7a6e5a1c75951d::t_da5e461413cecc 550-554,573,575-580,582-590
+  s_7a6e5a1c75951d::t_f21e8d1a97cab1 256-257,278
+  s_7a6e5a1c75951d::t_b0244b929547bb 466,470,472,480,487
+  s_7a6e5a1c75951d::t_03dbbec1f451f1 664-666
+  s_7a6e5a1c75951d::t_6d1efc7e177ae9 460,463,609,748
+Sources/Networking/AttemptMetrics.swift
+  s_7a6e5a1c75951d::t_4751bf2fd92295 76-107
+  s_7a6e5a1c75951d::t_48d1656cb32110 203-214,219,224-235,240
+Sources/NetworkingTestSupport/NetworkProgressRecorder.swift
+  s_7a6e5a1c75951d::t_6e98b1daef99a9 8
+  s_7a6e5a1c75951d::t_864991ccb470b7 1-7,9-46,48-65,67-135
+  s_7a6e5a1c75951d::t_0b3de971e13485 47,66
+Tests/NetworkingTests/AttemptMetricsTests.swift
+  s_7a6e5a1c75951d::t_516c4353590cb6 132,149
+Tests/NetworkingTests/UploadAndFileBodyTests.swift
+  s_7a6e5a1c75951d::t_311662ccc98323 124
+Tests/NetworkingTests/NetworkClientProgressTests.swift
+  s_7a6e5a1c75951d::t_04825ac0cc7987 283
+  s_7a6e5a1c75951d::t_516c4353590cb6 296
+Tests/NetworkingTests/NetworkClientRetryTests.swift
+  s_7a6e5a1c75951d::t_516c4353590cb6 637,712
+  s_7a6e5a1c75951d::t_04825ac0cc7987 635,710
+Sources/NetworkingTestSupport/RequestIDGenerators.swift
+  s_7a6e5a1c75951d::t_8b476fd08fe376 39-68,71,77,82,94
+  s_7a6e5a1c75951d::t_c1000bb66cd3d4 1-38,69-70,72-76,78-81,83-93,95-96
+Sources/Networking/RedirectEvaluation.swift
+  s_7a6e5a1c75951d::t_962ac0643fa2b1 1-14,16,18-19,21-22,26-28,30-45,50-58,60-61,63-70,72-87,89-119
+  s_7a6e5a1c75951d::t_5bae62d2b3ed8f 15,17,20,23-25,29,62
+  s_7a6e5a1c75951d::t_459a51b20546e3 46-49,59,71,88
+Sources/Networking/NetworkClient.swift
+  s_7a6e5a1c75951d::t_e9419e7d3979d3 2107-2112,2114-2115,2149-2154,2156-2157
+  s_7a6e5a1c75951d::t_c22b6fb3359810 277,283,289
+  s_7a6e5a1c75951d::t_88b74a4c375623 2346,2352-2353
+  s_7a6e5a1c75951d::t_d36f60f005faec 1012
+  s_7a6e5a1c75951d::t_b73f76f9ebcdce 273-276,278-282,284,296,301-308,310,315,324-338,343
+  s_7a6e5a1c75951d::t_5c4c0973d8e934 906-908
+  s_7a6e5a1c75951d::t_cb175e037d174e 877
+  s_7a6e5a1c75951d::t_c60e78db7417bf 571,573,575,579-580
+  s_7a6e5a1c75951d::t_79fb22e32eef30 611-618,624-631,636,654-661,667-674,679
+  s_7a6e5a1c75951d::t_e7338d782390a6 1165-1176,1180-1182,1185,1190
+  s_7a6e5a1c75951d::t_ea6861ecb29c45 1183-1184
+Sources/NetworkingTestSupport/NetworkEventRecorder.swift
+  s_7a6e5a1c75951d::t_b1e5cbe0d19e4e 93,97,101,107,109-116,124-129
+  s_7a6e5a1c75951d::t_2c4c37cc2482dc 1-23,36-51,54-92,94-96,98-100,102-106,108,117-123,130-141,143,145-169,171,175-180
+  s_7a6e5a1c75951d::t_2e19c326d44451 24-35
+  s_7a6e5a1c75951d::t_ea6861ecb29c45 52,142,144,170,172-174
+  s_7a6e5a1c75951d::t_0b3de971e13485 53
+Tests/NetworkingTestSupportTests/NetworkTestDependenciesTests.swift
+  s_7a6e5a1c75951d::t_f396991760cd71 1-116,118-162,183-184
+  s_7a6e5a1c75951d::t_ea6861ecb29c45 117,163-182
+Sources/NetworkingTestSupport/NetworkClientTesting.swift
+  s_7a6e5a1c75951d::t_7b22327c1e9814 19-20,25,27-35
+Tests/NetworkingTests/URLSessionTransportProgressTests.swift
+  s_7a6e5a1c75951d::t_7b53494a5e0c29 295
+Sources/NetworkingTestSupport/NetworkTestDependencies.swift
+  s_7a6e5a1c75951d::t_bb5f8c1f9e79da 1-76
+Sources/NetworkingTestSupport/StubLatency.swift
+  s_7a6e5a1c75951d::t_22b9fd6f10e28d 21-22,25-30,34-49,73,97,99-107,110,113-115
+  s_7a6e5a1c75951d::t_f4664ba2610b8f 1-20,23-24,31-33,50-59,64-72,77,79,90-96,98,108-109,111-112,116-140,146-152
+  s_7a6e5a1c75951d::t_1701209c137b00 61-63,74,141-145
+  s_7a6e5a1c75951d::t_8d6da5ff2e1a1a 60,75-76,78,80-89
+Tests/NetworkingTestSupportTests/RequestIDGeneratorsTests.swift
+  s_7a6e5a1c75951d::t_32664b5f8d3406 1-92
+Tests/NetworkingTests/AuthenticationTests.swift
+  s_7a6e5a1c75951d::t_d05aaebae3b5af 787
+  s_7a6e5a1c75951d::t_516c4353590cb6 789
+Tests/NetworkingTestSupportTests/MockScriptedExecutionTests.swift
+  s_7a6e5a1c75951d::t_ea6861ecb29c45 38,156
+  s_7a6e5a1c75951d::t_4dac56dafe7b2e 319-356
+  s_7a6e5a1c75951d::t_cfed22e07b30fd 138-146,149-150,152-155,157-159
+  s_7a6e5a1c75951d::t_62b9987c690edf 10
+  s_7a6e5a1c75951d::t_1fc20bfda40885 1-9,11-37,39-85,90-137,147-148,151,160-230,409-438
+  s_7a6e5a1c75951d::t_1d82e0670fb639 86-89
+  s_7a6e5a1c75951d::t_c80e290153ed13 231-318,357-408
+Tests/NetworkingTests/RedirectPolicyTests.swift
+  s_7a6e5a1c75951d::t_516c4353590cb6 726,728
+Tests/NetworkingTestSupportTests/MockRedirectSimulationTests.swift
+  s_7a6e5a1c75951d::t_c279e6279debba 358-372
+  s_7a6e5a1c75951d::t_ef4131b37d58e5 145
+  s_7a6e5a1c75951d::t_447f296a644a14 133
+  s_7a6e5a1c75951d::t_ea6861ecb29c45 61,161
+  s_7a6e5a1c75951d::t_1aa34c4afbdae9 192
+  s_7a6e5a1c75951d::t_6ca0ea71a397cb 1-10,12-56,58-60,62-132,134-144,146-156,158-160,162-180,182-191,193-264,335-357
+  s_7a6e5a1c75951d::t_08eb6336a0e55c 181
+  s_7a6e5a1c75951d::t_78bc207e5b58e7 329-330
+  s_7a6e5a1c75951d::t_80c946e566477a 57,157
+  s_7a6e5a1c75951d::t_f40bf2f69ec85f 11,265-328,331-334
+Tests/NetworkingTestSupportTests/MockNetworkTransportTests.swift
+  s_7a6e5a1c75951d::t_a99bff1471bd82 920
+  s_7a6e5a1c75951d::t_f5b7fce2725405 465-523
+Tests/NetworkingTestSupportTests/NetworkRecorderTests.swift
+  s_7a6e5a1c75951d::t_f454d713b753bc 1-33,35-60,62-70,72-170,191-192
+  s_7a6e5a1c75951d::t_ea6861ecb29c45 34,71,171-190
+  s_7a6e5a1c75951d::t_0c9747a196da73 61
+CONTEXT.md
+  s_7a6e5a1c75951d::t_5c0497f4db3154 63-72,78-80
+  s_7a6e5a1c75951d::t_3b1213bd4cd1b5 61-62,73-77,81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "569dd96ff8003ba6df0cd434b8318c0e6f19ac8c",
+  "prompts": {},
+  "sessions": {
+    "s_7a6e5a1c75951d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f65d-dd83-72f3-84aa-edf89b8f640e",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
