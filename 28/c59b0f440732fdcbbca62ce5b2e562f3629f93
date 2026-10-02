@@ -1,0 +1,44 @@
+Tests/NetworkingTestSupportTests/MockScriptedExecutionTests.swift
+  s_7a6e5a1c75951d::t_2f8a283c3f432b 409-449,451,462-463,465-466,471,477,479-486
+  s_7a6e5a1c75951d::t_e3d872878ebf33 450,452-461,464,467-470,473-476,478
+  s_7a6e5a1c75951d::t_92fb25ecd4efcd 472
+Tests/NetworkingTestSupportTests/NetworkRecorderTests.swift
+  s_7a6e5a1c75951d::t_c2d887bcad7633 215-244
+Sources/NetworkingTestSupport/StubLatency.swift
+  s_7a6e5a1c75951d::t_7cc636888655bc 102
+  s_7a6e5a1c75951d::t_788d8a2d92ccde 62-65,97-101
+Sources/Networking/TransportRequest.swift
+  s_7a6e5a1c75951d::t_dd129dfa292957 74-77,89,100
+Tests/NetworkingTestSupportTests/MockRedirectSimulationTests.swift
+  s_7a6e5a1c75951d::t_f9ea705ce87154 259-297
+Sources/Networking/NetworkClient.swift
+  s_7a6e5a1c75951d::t_4f58c05f95b832 693
+  s_7a6e5a1c75951d::t_85648ba35ac930 2101
+  s_7a6e5a1c75951d::t_c30f997bfe0516 535-536
+  s_7a6e5a1c75951d::t_31a93e50cba7da 1967
+Sources/NetworkingTestSupport/NetworkProgressRecorder.swift
+  s_7a6e5a1c75951d::t_84c5bd072d4892 29-31,36-40
+  s_7a6e5a1c75951d::t_3bfd8671f46850 130-158,161-163,165-169
+  s_7a6e5a1c75951d::t_133f4eb2f5cd64 62-65,67-79,83
+  s_7a6e5a1c75951d::t_abe42c43c4623e 41-42
+Sources/NetworkingTestSupport/MockNetworkTransport.swift
+  s_7a6e5a1c75951d::t_6e03fb4ae830c9 689-690,692
+  s_7a6e5a1c75951d::t_c3cddf682de79e 624-628,631-632
+  s_7a6e5a1c75951d::t_6743d7e9131bc6 691
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "28c59b0f440732fdcbbca62ce5b2e562f3629f93",
+  "prompts": {},
+  "sessions": {
+    "s_7a6e5a1c75951d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f65d-dd83-72f3-84aa-edf89b8f640e",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
