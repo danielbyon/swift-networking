@@ -212,6 +212,36 @@ func progressRecordingSubscribesBeforeReturning() async {
     #expect(recorder.recordedProgress().contains { $0.bytesReceived == 2 && $0.expectedBytesToReceive == 4 })
 }
 
+@Test("Progress predicates may re-enter the recorder")
+func progressPredicatesMayReenterRecorder() async {
+    let coordinator = NetworkProgressCoordinator()
+    let recorder = NetworkProgressRecorder()
+    recorder.startRecording(coordinator.progress)
+
+    coordinator.updateDownload(bytesReceived: 2, expectedBytesToReceive: 4)
+    await recorder.waitUntilRecorded { $0.bytesReceived == 2 }
+
+    // The existing-history check runs the caller predicate without the recorder mutex held, so a
+    // predicate that calls back into the recorder completes instead of deadlocking.
+    await recorder.waitUntilRecorded { progress in
+        recorder.recordedProgress().contains(progress)
+    }
+
+    // The update path also evaluates predicates without the mutex held, including for a wait that
+    // is already pending when the matching state arrives.
+    let pendingWait = Task {
+        await recorder.waitUntilRecorded { progress in
+            recorder.recordedProgress().contains(progress) && progress.bytesReceived == 3
+        }
+    }
+    coordinator.updateDownload(bytesReceived: 3, expectedBytesToReceive: 4)
+    await pendingWait.value
+
+    coordinator.finish(successfully: true)
+    await recorder.waitUntilFinished()
+    #expect(recorder.recordedProgress().contains { $0.bytesReceived == 3 })
+}
+
 /// A one-shot gate that ignores cancellation, keeping a waiting task suspended until the test
 /// opens it so tests can order cancellation against event delivery.
 private actor OneShotGate {

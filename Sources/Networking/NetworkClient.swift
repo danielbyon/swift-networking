@@ -532,6 +532,8 @@ private func durationTimeInterval(_ duration: Duration) -> TimeInterval {
 package struct URLSessionTransport: NetworkTransport {
     private let session: URLSession
     private let delegateRouter: URLSessionDelegateRouter
+    /// The fallback preference for attempts whose transport request carries no resolved value,
+    /// such as package tests that build a `TransportRequest` directly.
     private let assumesHTTP3Capable: Bool?
     private let beforeTaskStart: (@Sendable () async -> Void)?
     private let afterTaskStartDecision: (@Sendable (Bool) -> Void)?
@@ -688,7 +690,7 @@ package struct URLSessionTransport: NetworkTransport {
         guard let execution = request.execution,
               let urlRequest = makeURLRequest(
                   request,
-                  assumesHTTP3Capable: assumesHTTP3Capable,
+                  assumesHTTP3Capable: request.assumesHTTP3Capable ?? assumesHTTP3Capable,
               )
         else {
             return .failure(error: URLError(.badURL), rawTaskMetrics: nil, didStartTask: false)
@@ -1962,6 +1964,7 @@ public final class NetworkClient: Sendable {
         let clientJSONEncoderConfiguration = configuration.jsonEncoderConfiguration
         let clientJSONDecoderConfiguration = configuration.jsonDecoderConfiguration
         let clientResponseValidationPolicy = configuration.responseValidationPolicy
+        let clientAssumesHTTP3Capable = configuration.assumesHTTP3Capable
         let retryPolicy = request.retryPolicy ?? configuration.retryPolicy
         let redirectPolicy = request.redirectPolicy ?? configuration.redirectPolicy
         let clientSuccessfulResponseBodyRetentionPolicy = configuration.successfulResponseBodyRetentionPolicy
@@ -2095,6 +2098,7 @@ public final class NetworkClient: Sendable {
                     operation: request.operation,
                     execution: execution,
                     eventExecution: eventExecution,
+                    assumesHTTP3Capable: clientAssumesHTTP3Capable,
                 )
                 eventExecution.prepareAttempt(number: nextAttemptNumber, request: adaptedRequest)
                 let transportResult = await executeTransportAttempt(

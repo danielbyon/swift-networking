@@ -59,8 +59,10 @@ public actor StubLatency {
     /// The call returns immediately when the point was already released, and throws
     /// `CancellationError` when the attempt is cancelled before the point is released. A
     /// suspension that observes the cancellation while registering fails immediately instead of
-    /// waiting for a release that would never resume it. Calling this method is reserved for mock
-    /// transport implementations.
+    /// waiting for a release that would never resume it, and a cancellation that races a release
+    /// still surfaces after the continuation resumes because the suspension re-checks the task's
+    /// cancellation state before it returns. Calling this method is reserved for mock transport
+    /// implementations.
     ///
     /// - Parameter point: The one-based pause-point number within the transport attempt.
     public func suspend(at point: Int) async throws {
@@ -92,6 +94,12 @@ public actor StubLatency {
         } onCancel: {
             Task { await self.cancelSuspension(at: point, waiterID: waiterID) }
         }
+
+        // Cancellation cleanup reaches the actor through an independent task, so `release(at:)` can
+        // resume this suspension before that cleanup runs. Re-checking after the continuation
+        // resumes keeps a cancelled attempt from continuing past a pause point that a concurrent
+        // release opened for it.
+        try Task.checkCancellation()
     }
 
     /// Waits until the mock transport has reached the numbered pause point the requested number of times.

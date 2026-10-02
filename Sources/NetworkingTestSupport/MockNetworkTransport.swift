@@ -621,12 +621,15 @@ public actor MockNetworkTransport: NetworkTransport {
         } catch let limit as StubRedirectLimitExceeded {
             return .redirectLimitExceeded(limit)
         } catch {
-            if error is CancellationError || Task.isCancelled {
-                markCancellationObserved(at: recordingIndex)
-                return .failed(error: CancellationError(), normalizedMetrics: stub.metrics)
+            guard Task.isCancelled else {
+                // A stub can script any error, including `CancellationError`, but only the task that
+                // executes the mock can establish that cancellation reached the transport. A
+                // scripted cancellation failure stays an ordinary terminal transport error.
+                return .failed(error: error, normalizedMetrics: stub.metrics)
             }
 
-            return .failed(error: error, normalizedMetrics: stub.metrics)
+            markCancellationObserved(at: recordingIndex)
+            return .failed(error: CancellationError(), normalizedMetrics: stub.metrics)
         }
     }
 
@@ -683,7 +686,10 @@ public actor MockNetworkTransport: NetworkTransport {
             if let currentRequest {
                 activeRequest = currentRequest
             } else {
-                guard let derivedRequest = makeURLRequest(request, assumesHTTP3Capable: nil) else {
+                guard let derivedRequest = makeURLRequest(
+                    request,
+                    assumesHTTP3Capable: request.assumesHTTP3Capable,
+                ) else {
                     throw NetworkTestSupportError.redirectRequiresRepresentableRequest
                 }
 

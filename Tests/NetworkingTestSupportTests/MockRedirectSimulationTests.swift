@@ -256,6 +256,45 @@ func exceedingRedirectLimitCarriesSuppliedMetrics() async throws {
     try await transport.verifyAllFiniteStubsConsumed()
 }
 
+@Test("The resolved HTTP/3 preference reaches the initial redirect policy context")
+func resolvedHTTP3PreferenceReachesInitialRedirectContext() async throws {
+    let startURL = try #require(URL(string: "https://mock.example/h3-start"))
+    let hopURL = try #require(URL(string: "https://mock.example/h3-hop"))
+    let observedPreferences = Mutex<[Bool]>([])
+    let policy = RedirectPolicy.custom(maximumRedirects: 3) { context in
+        observedPreferences.withLock { $0.append(context.currentRequest.assumesHTTP3Capable) }
+        return .follow
+    }
+    let stub = try NetworkStub(
+        matching: .method(.get),
+        response: .redirect(
+            proposals: [
+                StubRedirect(
+                    response: redirectResponse(status: 307, location: hopURL),
+                    proposedRequest: URLRequest(url: hopURL),
+                ),
+            ],
+            followedBy: .httpResponse(
+                data: Data([0x2a]),
+                response: HTTPResponse(status: .init(code: 200)),
+            ),
+        ),
+    )
+    let transport = MockNetworkTransport(stubs: [stub])
+    let configuration = NetworkClient.Configuration().withAssumesHTTP3Capable(true)
+    let client = try NetworkClient.testing(configuration: configuration, transport: transport)
+    let endpoint = redirectEndpoint(url: startURL, redirectPolicy: policy)
+
+    let response = try await client.send(Request(endpoint: endpoint))
+
+    #expect(response.value == Data([0x2a]))
+    #expect(observedPreferences.withLock { $0 } == [true])
+    let recorded = await transport.recordedRequests()
+    #expect(recorded.count == 1)
+    #expect(recorded.first?.attemptNumber == 1)
+    try await transport.verifyAllFiniteStubsConsumed()
+}
+
 private func redirectResponse(status: Int, location: URL) -> HTTPResponse {
     var fields = HTTPFields()
     if let locationName = HTTPField.Name("Location") {

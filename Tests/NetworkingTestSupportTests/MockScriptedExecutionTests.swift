@@ -406,6 +406,84 @@ func repeatedAttemptsSuspendAtEachPausePointOccurrence() async throws {
     try await transport.verifyAllFiniteStubsConsumed()
 }
 
+@Test("A scripted cancellation failure is not observed cancellation")
+func scriptedCancellationFailureIsNotObservedCancellation() async throws {
+    let url = try #require(URL(string: "https://mock.example/scripted-cancellation"))
+    let transport = try MockNetworkTransport(stubs: [
+        NetworkStub(
+            matching: .method(.get),
+            response: .failure(CancellationError()),
+        ),
+    ])
+    let client = try NetworkClient.testing(transport: transport)
+
+    do {
+        _ = try await client.send(scriptedExecutionRequest(url: url))
+        Issue.record("Expected the scripted cancellation failure to reach the caller")
+    } catch is CancellationError {
+        // Expected: the stub's own error stays the terminal transport error.
+    } catch {
+        Issue.record("Expected CancellationError, received \(error)")
+    }
+
+    let recorded = try #require(await transport.recordedRequests().first)
+    #expect(recorded.cancellationObserved == false)
+    do {
+        try await transport.verifyCancellationObserved()
+        Issue.record("Expected cancellation observation verification to fail")
+    } catch let error as NetworkTestSupportError {
+        #expect(error.localizedDescription.contains("No mock transport attempt observed cancellation"))
+    }
+    try await transport.verifyAllFiniteStubsConsumed()
+}
+
+@Test("Releasing a cancelled suspension still surfaces cancellation")
+func releasingCancelledSuspensionSurfacesCancellation() async throws {
+    let latency = StubLatency()
+    let stub = try NetworkStub(
+        matching: .method(.get),
+        response: .httpResponse(data: Data([0x2a]), response: HTTPResponse(status: .init(code: 200))),
+        latency: latency,
+        progress: [.download(bytesReceived: 1, expectedBytesToReceive: 2)],
+    )
+    let transport = MockNetworkTransport(stubs: [stub])
+    let coordinator = NetworkProgressCoordinator()
+    let recorder = NetworkProgressRecorder()
+    recorder.startRecording(coordinator.progress)
+    let request = TransportRequest(
+        httpRequest: HTTPRequest(method: .get, scheme: "https", authority: "mock.example", path: "/cancelled-release"),
+        body: .none,
+        requestID: RequestID(rawValue: UUID()),
+        operation: .data,
+        execution: .data(body: nil),
+    )
+    let attempt = Task { await transport.executeWithMetrics(request, progress: coordinator.reporter) }
+    await recorder.waitUntilRecorded { $0.attemptNumber == 1 }
+
+    await latency.waitUntilSuspended(at: 1)
+    attempt.cancel()
+    await latency.release(at: 1)
+
+    let result = await attempt.value
+    guard case let .failure(error, rawTaskMetrics, didStartTask, normalizedMetrics) = result else {
+        Issue.record("Expected the cancelled attempt to fail")
+        return
+    }
+
+    #expect(error is CancellationError)
+    #expect(rawTaskMetrics == nil)
+    #expect(didStartTask)
+    #expect(normalizedMetrics == nil)
+
+    coordinator.finish(successfully: false)
+    await recorder.waitUntilFinished()
+    #expect(recorder.recordedProgress().contains { $0.bytesReceived == 1 } == false)
+    let recorded = try #require(await transport.recordedRequests().first)
+    #expect(recorded.cancellationObserved)
+    try await transport.verifyCancellationObserved()
+    try await transport.verifyAllFiniteStubsConsumed()
+}
+
 private func scriptedExecutionResponse(status: Int) -> HTTPResponse {
     HTTPResponse(status: .init(code: status))
 }

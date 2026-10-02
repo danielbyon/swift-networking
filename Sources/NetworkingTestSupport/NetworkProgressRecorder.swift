@@ -26,8 +26,18 @@ public final class NetworkProgressRecorder: Sendable {
     private struct State: Sendable {
         var recorded: [NetworkProgress] = []
         var isFinished = false
+        /// Monotonic publication counter. It changes whenever `recorded` grows, so a wait that
+        /// snapshotted the history can detect a publication that raced its registration.
+        var version = 0
         var updateWaiters: [UpdateWaiter] = []
         var finishWaiters: [CheckedContinuation<Void, Never>] = []
+    }
+
+    /// A consistent view of the published history used to evaluate a caller predicate.
+    private struct HistorySnapshot: Sendable {
+        let recorded: [NetworkProgress]
+        let version: Int
+        let isFinished: Bool
     }
 
     private let state = Mutex(State())
@@ -49,12 +59,28 @@ public final class NetworkProgressRecorder: Sendable {
             var iterator = iterator
 
             while let update = await iterator.next() {
-                let readyWaiters = self.state.withLock { state -> [CheckedContinuation<Void, Never>] in
+                // Phase one publishes the update and snapshots the waiters that must evaluate it.
+                // Caller-supplied predicates never run while the mutex is held, because a predicate
+                // may call back into the recorder.
+                let waiters = self.state.withLock { state -> [UpdateWaiter] in
                     state.recorded.append(update)
+                    state.version += 1
+                    return state.updateWaiters
+                }
+
+                let matchingIDs = Set(waiters.lazy.filter { $0.predicate(update) }.map(\.id))
+                guard matchingIDs.isEmpty == false else {
+                    continue
+                }
+
+                // Phase two claims only the waiters that are still pending and whose predicate
+                // matched this update. Waiters registered after the snapshot keep waiting, because
+                // they observe the new state through their own history snapshot.
+                let readyWaiters = self.state.withLock { state -> [CheckedContinuation<Void, Never>] in
                     var ready: [CheckedContinuation<Void, Never>] = []
                     var remaining: [UpdateWaiter] = []
                     for waiter in state.updateWaiters {
-                        if waiter.predicate(update) {
+                        if matchingIDs.contains(waiter.id) {
                             ready.append(waiter.continuation)
                         } else {
                             remaining.append(waiter)
@@ -101,20 +127,46 @@ public final class NetworkProgressRecorder: Sendable {
     ///
     /// - Parameter predicate: The condition a recorded state must satisfy.
     public func waitUntilRecorded(_ predicate: @escaping @Sendable (NetworkProgress) -> Bool) async {
-        let waiterID = UUID()
-        await withCheckedContinuation { continuation in
-            let shouldResume = state.withLock { state -> Bool in
-                if state.recorded.contains(where: predicate) || state.isFinished {
+        while true {
+            let snapshot = state.withLock { state in
+                HistorySnapshot(
+                    recorded: state.recorded,
+                    version: state.version,
+                    isFinished: state.isFinished,
+                )
+            }
+
+            // The predicate runs without the mutex held so it can re-enter the recorder.
+            if snapshot.isFinished {
+                return
+            }
+            if snapshot.recorded.contains(where: predicate) {
+                return
+            }
+
+            var didRegister = false
+            await withCheckedContinuation { continuation in
+                // Registration revalidates the snapshot version so a publication or completion
+                // that raced the predicate cannot be missed.
+                didRegister = state.withLock { state -> Bool in
+                    guard state.version == snapshot.version, state.isFinished == false else {
+                        return false
+                    }
+
+                    state.updateWaiters.append(
+                        UpdateWaiter(id: UUID(), predicate: predicate, continuation: continuation),
+                    )
                     return true
                 }
-
-                state.updateWaiters.append(
-                    UpdateWaiter(id: waiterID, predicate: predicate, continuation: continuation),
-                )
-                return false
+                if didRegister == false {
+                    continuation.resume()
+                }
             }
-            if shouldResume {
-                continuation.resume()
+
+            if didRegister {
+                // A matching state was recorded or the sequence finished while the waiter was
+                // pending, so the wait contract is already satisfied.
+                return
             }
         }
     }
