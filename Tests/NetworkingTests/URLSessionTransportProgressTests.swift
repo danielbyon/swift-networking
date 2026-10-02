@@ -292,7 +292,7 @@ struct URLSessionTransportProgressTests {
         let result = await transportTask.value
         coordinator.finish(successfully: false)
 
-        guard case let .failure(error, _, didStartTask) = result else {
+        guard case let .failure(error, _, didStartTask, _) = result else {
             Issue.record("Expected URLSession cancellation before start")
             return
         }

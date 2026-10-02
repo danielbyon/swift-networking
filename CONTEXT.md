@@ -58,6 +58,33 @@ The `NetworkTransport` protocol and production client transport initializer rema
 Applications construct a test client through `NetworkClient.testing(...)` in
 `NetworkingTestSupport`; `Networking` does not expose transport injection.
 
+Deterministic execution controls stay in `NetworkingTestSupport`. `NetworkTestDependencies` supplies
+the monotonic retry sleep, wall-clock time, and jitter used by `NetworkClient.testing(...)`.
+`StubLatency` suspends a scripted attempt at numbered pause points, and a repeated stub reaches the
+same points once per attempt, so tests wait for the occurrence that belongs to the attempt they
+coordinate. `StubProgressUpdate` values publish byte-transfer updates through the normal
+`NetworkTask.progress` seam, and a stub may carry `NormalizedAttemptMetrics` that every started
+attempt prefers over raw task metrics, which mock attempts leave empty; the supplied metrics also
+survive scripted failures, so failed-attempt histories and `attemptFailed` events keep reporting
+them. `StaticRequestIDGenerator` and `SequenceRequestIDGenerator` assign deterministic logical
+identities, and sequence exhaustion is an explicit programming failure rather than identity reuse.
+`NetworkProgressRecorder` and `NetworkEventRecorder` retain observation history through the normal
+progress sequence and `NetworkEventObserver` seams without adding production history hooks.
+The progress recorder subscribes before `startRecording(_:)` returns, so updates the
+sequence publishes after the call reach the recording task. Terminal waiters are claimed either
+by the terminal event or by cancellation, never both, so a cancelled waiter throws
+`CancellationError`; waiting resolves against the first terminal event recorded for a request
+identity, so a test that waits more than once must give each execution a distinct identity
+through `SequenceRequestIDGenerator`.
+
+A mock attempt commits its progress start before it records the request or consumes the selected
+stub, so a rejected start neither records an attempt nor consumes a stub. Redirect proposals stay
+inside one transport attempt: they consume no additional stub, keep the attempt number, and use the
+same redirect policy decisions, per-attempt limits, and `redirectDecision` events as URLSession
+execution. Because every evaluated proposal reports a decision event, a scripted proposal whose
+Foundation request has no HTTP representation fails the attempt before the policy evaluates it
+instead of continuing without that event.
+
 ### Logical execution
 
 One invocation of send or task(for:).

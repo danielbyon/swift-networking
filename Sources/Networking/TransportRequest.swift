@@ -71,6 +71,10 @@ package struct TransportRequest: Sendable {
     package let requestContext: RequestContext
     package let attemptNumber: UInt
     package let eventExecution: NetworkEventExecution?
+    /// The client's resolved HTTP/3 preference for this attempt, or nil when the client left the
+    /// Foundation request default in place. Transports apply the value to the Foundation request
+    /// they send for the attempt.
+    package let assumesHTTP3Capable: Bool?
 
     package init(
         httpRequest: HTTPRequest,
@@ -82,6 +86,7 @@ package struct TransportRequest: Sendable {
         operation: EndpointOperation = .data,
         execution: TransportExecution? = nil,
         eventExecution: NetworkEventExecution? = nil,
+        assumesHTTP3Capable: Bool? = nil,
     ) {
         self.httpRequest = httpRequest
         self.body = body
@@ -92,5 +97,6 @@ package struct TransportRequest: Sendable {
         self.requestContext = requestContext
         self.attemptNumber = attemptNumber
         self.eventExecution = eventExecution
+        self.assumesHTTP3Capable = assumesHTTP3Capable
     }
 }

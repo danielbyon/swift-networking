@@ -462,6 +462,65 @@ func authenticationReplayRecordsTransportReadyAttempts() async throws {
     try await transport.verifyAllFiniteStubsConsumed()
 }
 
+@Test("Ordinary retry and authentication replay budgets stay independent in one execution")
+func ordinaryRetryAndAuthenticationReplayUseIndependentBudgets() async throws {
+    let url = try #require(URL(string: "https://mock.example/retry-and-replay"))
+    let requestID = RequestID(rawValue: UUID())
+    let transport = try MockNetworkTransport(stubs: [
+        NetworkStub(
+            matching: .headers(authorizationFields("token-1"), semantics: .subset).and(.attemptNumber(1)),
+            response: .httpResponse(data: Data(), response: HTTPResponse(status: .init(code: 503))),
+        ),
+        NetworkStub(
+            matching: .headers(authorizationFields("token-2"), semantics: .subset).and(.attemptNumber(2)),
+            response: .httpResponse(data: Data(), response: HTTPResponse(status: .init(code: 401))),
+        ),
+        NetworkStub(
+            matching: .headers(authorizationFields("token-3"), semantics: .subset).and(.attemptNumber(3)),
+            response: .httpResponse(data: Data([2]), response: HTTPResponse(status: .init(code: 200))),
+        ),
+    ])
+    let provider = ReplayingAuthenticationProvider(counter: AuthTokenCounter())
+    var retryConfiguration = RetryPolicy.Configuration()
+    retryConfiguration.maximumRetries = 1
+    let configuration = NetworkClient.Configuration()
+        .withAuthenticationProvider(provider)
+        .withRetryPolicy(RetryPolicy(configuration: retryConfiguration))
+        .withRequestIDGenerator(StaticRequestIDGenerator(requestID: requestID))
+    let client = try NetworkClient.testing(
+        configuration: configuration,
+        transport: transport,
+        dependencies: .deterministic(),
+    )
+    let endpoint = Endpoint<Never, Never, Data>.data(
+        method: .get,
+        route: .absolute(url),
+        response: .data,
+    )
+    .authenticationRequirement(.required(maximumReplays: 1))
+
+    let response = try await client.send(Request(endpoint: endpoint))
+
+    #expect(response.value == Data([2]))
+    #expect(response.requestID == requestID)
+    #expect(response.attempts.map(\.requestID) == [requestID, requestID, requestID])
+    #expect(response.attempts.map(\.attemptNumber) == [1, 2, 3])
+    #expect(response.attempts.map(\.outcome) == [
+        .retryScheduled,
+        .authenticationReplayScheduled,
+        .acceptedResponse,
+    ])
+    let recorded = await transport.recordedRequests()
+    #expect(recorded.map(\.attemptNumber) == [1, 2, 3])
+    #expect(recorded.map(\.requestID) == [requestID, requestID, requestID])
+    #expect(recorded.map { $0.httpRequest.headerFields[.authorization] } == ["token-1", "token-2", "token-3"])
+    let groups = await transport.recordedRequestsByRequestID()
+    #expect(groups.count == 1)
+    #expect(groups.first?.requestID == requestID)
+    #expect(groups.first?.attempts.map(\.attemptNumber) == [1, 2, 3])
+    try await transport.verifyAllFiniteStubsConsumed()
+}
+
 @Test("Finite stubs consume the configured number of actual retry attempts")
 func finiteStubConsumptionTracksTransportAttempts() async throws {
     let url = try #require(URL(string: "https://mock.example/retry"))
@@ -858,7 +917,7 @@ private struct ReplayingAuthenticationProvider: AuthenticationProvider {
     }
 
     func recover(_ context: AuthenticationRecoveryContext) async throws -> AuthenticationRecovery {
-        context.attemptNumber == 1 ? .replay : .doNotReplay
+        context.httpResponse.status.code == 401 ? .replay : .doNotReplay
     }
 }
 

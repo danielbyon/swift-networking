@@ -121,7 +121,7 @@ struct UploadAndFileBodyTests {
 
         let result = await transport.executeDownloadWithMetrics(request, progress: progress.reporter)
 
-        guard case let .failure(_, _, didStartTask) = result else {
+        guard case let .failure(_, _, didStartTask, _) = result else {
             Issue.record("Expected the tuple-only transport to reject a download")
             return
         }

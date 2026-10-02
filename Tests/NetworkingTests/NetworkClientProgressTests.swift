@@ -280,7 +280,7 @@ private actor ProgressReportingTransport: NetworkTransport {
         switch step.result {
         case .success,
              .redirectLimitExceeded,
-             .failure(_, _, true):
+             .failure(_, _, true, _):
             progress.startAttempt(
                 attemptNumber: request.attemptNumber,
                 expectedBytesToSend: step.expectedBytesToSend,
@@ -293,7 +293,7 @@ private actor ProgressReportingTransport: NetworkTransport {
                 bytesReceived: step.bytesReceived,
                 expectedBytesToReceive: step.expectedBytesToReceive,
             )
-        case .failure(_, _, false):
+        case .failure(_, _, false, _):
             break
         }
         await gate.reportAndWait(request.attemptNumber)

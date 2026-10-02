@@ -73,6 +73,38 @@ public struct NormalizedAttemptMetrics: Sendable, Equatable, Hashable {
         }
     }
 
+    /// Creates normalized attempt diagnostics directly from library-owned values.
+    ///
+    /// Deterministic transports and test support supply normalized diagnostics through this
+    /// initializer instead of manufacturing Foundation task metrics. Production URLSession
+    /// execution derives the same shape from collected `URLSessionTaskMetrics`.
+    ///
+    /// - Parameters:
+    ///   - duration: The elapsed task duration, when known.
+    ///   - redirectCount: The number of redirects the task followed, when known.
+    ///   - requestBodyBytesSent: The total request-body bytes transferred, when known.
+    ///   - responseBodyBytesReceived: The total response-body bytes received, when known.
+    ///   - networkProtocolName: The negotiated protocol of the final transaction, when known.
+    ///   - isReusedConnection: Whether the final transaction reused a connection, when known.
+    ///   - resourceFetchType: How the final transaction fetched its resource, when known.
+    public init(
+        duration: Duration? = nil,
+        redirectCount: Int? = nil,
+        requestBodyBytesSent: Int64? = nil,
+        responseBodyBytesReceived: Int64? = nil,
+        networkProtocolName: String? = nil,
+        isReusedConnection: Bool? = nil,
+        resourceFetchType: URLSessionTaskMetrics.ResourceFetchType? = nil,
+    ) {
+        self.duration = duration
+        self.redirectCount = redirectCount
+        self.requestBodyBytesSent = requestBodyBytesSent
+        self.responseBodyBytesReceived = responseBodyBytesReceived
+        self.networkProtocolName = networkProtocolName
+        self.isReusedConnection = isReusedConnection
+        self.resourceFetchType = resourceFetchType
+    }
+
     package init(taskMetrics: URLSessionTaskMetrics?) {
         guard let taskMetrics else {
             self.init()
@@ -168,21 +200,43 @@ package struct AttemptTransactionMetrics: Sendable {
 }
 
 package enum NetworkTransportResult: Sendable {
-    case success(data: Data, response: HTTPResponse, rawTaskMetrics: URLSessionTaskMetrics?)
-    case failure(error: any Error, rawTaskMetrics: URLSessionTaskMetrics?, didStartTask: Bool)
+    case success(
+        data: Data,
+        response: HTTPResponse,
+        rawTaskMetrics: URLSessionTaskMetrics?,
+        normalizedMetrics: NormalizedAttemptMetrics? = nil,
+    )
+    case failure(
+        error: any Error,
+        rawTaskMetrics: URLSessionTaskMetrics?,
+        didStartTask: Bool,
+        normalizedMetrics: NormalizedAttemptMetrics? = nil,
+    )
     case redirectLimitExceeded(
         maximumRedirects: UInt,
         lastResponse: HTTPResponse?,
         rawTaskMetrics: URLSessionTaskMetrics?,
+        normalizedMetrics: NormalizedAttemptMetrics? = nil,
     )
 }
 
 package enum NetworkTransportDownloadResult: Sendable {
-    case success(file: DownloadedFileStorage, response: HTTPResponse, rawTaskMetrics: URLSessionTaskMetrics?)
-    case failure(error: any Error, rawTaskMetrics: URLSessionTaskMetrics?, didStartTask: Bool)
+    case success(
+        file: DownloadedFileStorage,
+        response: HTTPResponse,
+        rawTaskMetrics: URLSessionTaskMetrics?,
+        normalizedMetrics: NormalizedAttemptMetrics? = nil,
+    )
+    case failure(
+        error: any Error,
+        rawTaskMetrics: URLSessionTaskMetrics?,
+        didStartTask: Bool,
+        normalizedMetrics: NormalizedAttemptMetrics? = nil,
+    )
     case redirectLimitExceeded(
         maximumRedirects: UInt,
         lastResponse: HTTPResponse?,
         rawTaskMetrics: URLSessionTaskMetrics?,
+        normalizedMetrics: NormalizedAttemptMetrics? = nil,
     )
 }
