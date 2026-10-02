@@ -70,6 +70,12 @@ them. `StaticRequestIDGenerator` and `SequenceRequestIDGenerator` assign determi
 identities, and sequence exhaustion is an explicit programming failure rather than identity reuse.
 `NetworkProgressRecorder` and `NetworkEventRecorder` retain observation history through the normal
 progress sequence and `NetworkEventObserver` seams without adding production history hooks.
+The progress recorder subscribes before `startRecording(_:)` returns, so updates the
+sequence publishes after the call reach the recording task. Terminal waiters are claimed either
+by the terminal event or by cancellation, never both, so a cancelled waiter throws
+`CancellationError`; waiting resolves against the first terminal event recorded for a request
+identity, so a test that waits more than once must give each execution a distinct identity
+through `SequenceRequestIDGenerator`.
 
 A mock attempt commits its progress start before it records the request or consumes the selected
 stub, so a rejected start neither records an attempt nor consumes a stub. Redirect proposals stay

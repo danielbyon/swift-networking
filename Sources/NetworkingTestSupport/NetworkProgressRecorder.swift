@@ -37,13 +37,18 @@ public final class NetworkProgressRecorder: Sendable {
 
     /// Starts consuming the supplied progress sequence until it finishes.
     ///
-    /// The subscription is created immediately, so the current state of the sequence is recorded
-    /// before any later update. Recording continues on an internal task that callers do not manage.
+    /// The recorder subscribes before this method returns, so an update the sequence publishes
+    /// after the call reaches the recording task instead of being missed. Recording continues on
+    /// an internal task that callers do not manage.
     ///
     /// - Parameter progress: The progress sequence to record.
     public func startRecording(_ progress: NetworkProgressSequence) {
+        let iterator = progress.makeAsyncIterator()
+
         Task {
-            for await update in progress {
+            var iterator = iterator
+
+            while let update = await iterator.next() {
                 let readyWaiters = self.state.withLock { state -> [CheckedContinuation<Void, Never>] in
                     state.recorded.append(update)
                     var ready: [CheckedContinuation<Void, Never>] = []

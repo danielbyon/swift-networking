@@ -211,6 +211,11 @@ final class NetworkProgressCoordinator: Sendable {
         NetworkProgressReporter(coordinator: self, commitAttemptStart: commitAttemptStart)
     }
 
+    /// Number of active subscriptions to the progress sequence.
+    var subscriberCount: Int {
+        state.withLock { $0.subscribers.count }
+    }
+
     func startAttempt(attemptNumber: UInt, expectedBytesToSend: Int64?) {
         publish { _ in
             NetworkProgress(

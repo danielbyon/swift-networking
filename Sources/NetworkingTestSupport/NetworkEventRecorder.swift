@@ -18,16 +18,13 @@ import Synchronization
 public final class NetworkEventRecorder: Sendable {
     private struct TerminalWaiter: Sendable {
         let id: UUID
-        let continuation: CheckedContinuation<NetworkEvent, any Error>
+        let continuation: AsyncThrowingStream<NetworkEvent, any Error>.Continuation
     }
 
     /// The outcome of one attempt to register a terminal waiter.
     private enum WaiterAdmission: Sendable {
         /// The terminal event was already delivered and needs no registration.
         case recorded(NetworkEvent)
-
-        /// The waiting task was cancelled before it registered.
-        case cancelled
 
         /// The waiter is registered and resumes when the event arrives.
         case registered
@@ -36,7 +33,6 @@ public final class NetworkEventRecorder: Sendable {
     private struct State: Sendable {
         var events: [NetworkEvent] = []
         var terminalWaiters: [RequestID: [TerminalWaiter]] = [:]
-        var cancelledWaiterIDs: Set<UUID> = []
     }
 
     private let state = Mutex(State())
@@ -59,7 +55,8 @@ public final class NetworkEventRecorder: Sendable {
                 return state.terminalWaiters.removeValue(forKey: event.recordedRequestID) ?? []
             }
             for waiter in waiters {
-                waiter.continuation.resume(returning: event)
+                waiter.continuation.yield(event)
+                waiter.continuation.finish()
             }
         }
     }
@@ -80,53 +77,55 @@ public final class NetworkEventRecorder: Sendable {
 
     /// Waits for the terminal event of one logical execution.
     ///
-    /// The method returns immediately when the terminal event was already delivered, so tests do not
-    /// race asynchronous observer delivery.
+    /// The method resumes immediately with the terminal event when it was already delivered, so
+    /// tests do not race the asynchronous observer delivery. A task that is already cancelled when
+    /// the wait begins throws `CancellationError` instead of returning that recorded event, and a
+    /// waiter that is cancelled while it is still waiting is claimed by the cancellation rather
+    /// than by the event, so every waiter observes exactly one outcome.
     ///
-    /// - Parameter requestID: The logical execution whose terminal event should be observed.
+    /// The recorder resolves a waiter against the first terminal event recorded for `requestID`,
+    /// and it cannot distinguish separate executions that reuse one request identity. Give each
+    /// execution a distinct identity when a test waits more than once: `StaticRequestIDGenerator`
+    /// suits single-execution tests, while `SequenceRequestIDGenerator` allocates one identity per
+    /// execution.
+    ///
+    /// - Parameter requestID: The logical execution identity whose terminal event should be observed.
     /// - Returns: The delivered `requestCompleted`, `requestFailed`, or `requestCancelled` event.
-    /// - Throws: `CancellationError` when the waiting task is cancelled before the event arrives.
+    /// - Throws: `CancellationError` when the waiting task is cancelled.
     public func waitForTerminalEvent(for requestID: RequestID) async throws -> NetworkEvent {
+        try Task.checkCancellation()
+
         let waiterID = UUID()
-        return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                let admission = state.withLock { state -> WaiterAdmission in
-                    if let recorded = state.events.first(where: {
-                        $0.recordedRequestID == requestID && $0.isTerminalRecordedEvent
-                    }) {
-                        return .recorded(recorded)
-                    }
+        let (events, continuation) = AsyncThrowingStream<NetworkEvent, any Error>.makeStream()
 
-                    if state.cancelledWaiterIDs.remove(waiterID) != nil {
-                        return .cancelled
-                    }
-
-                    state.terminalWaiters[requestID, default: []].append(
-                        TerminalWaiter(id: waiterID, continuation: continuation),
-                    )
-                    return .registered
-                }
-
-                switch admission {
-                case let .recorded(event):
-                    continuation.resume(returning: event)
-                case .cancelled:
-                    continuation.resume(throwing: CancellationError())
-                case .registered:
-                    break
-                }
+        let admission = state.withLock { state -> WaiterAdmission in
+            if let recorded = state.events.first(where: {
+                $0.recordedRequestID == requestID && $0.isTerminalRecordedEvent
+            }) {
+                return .recorded(recorded)
             }
+
+            state.terminalWaiters[requestID, default: []].append(
+                TerminalWaiter(id: waiterID, continuation: continuation),
+            )
+            return .registered
+        }
+
+        if case let .recorded(event) = admission {
+            return event
+        }
+
+        return try await withTaskCancellationHandler {
+            for try await event in events {
+                return event
+            }
+
+            throw CancellationError()
         } onCancel: {
             let cancelled = state.withLock { state -> TerminalWaiter? in
                 guard var waiters = state.terminalWaiters[requestID],
                       let index = waiters.firstIndex(where: { $0.id == waiterID })
                 else {
-                    let hasTerminalEvent = state.events.contains {
-                        $0.recordedRequestID == requestID && $0.isTerminalRecordedEvent
-                    }
-                    if hasTerminalEvent == false {
-                        state.cancelledWaiterIDs.insert(waiterID)
-                    }
                     return nil
                 }
 
@@ -134,7 +133,7 @@ public final class NetworkEventRecorder: Sendable {
                 state.terminalWaiters[requestID] = waiters.isEmpty ? nil : waiters
                 return waiter
             }
-            cancelled?.continuation.resume(throwing: CancellationError())
+            cancelled?.continuation.finish(throwing: CancellationError())
         }
     }
 }

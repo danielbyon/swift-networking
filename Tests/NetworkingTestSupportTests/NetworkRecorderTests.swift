@@ -7,8 +7,8 @@
 
 import Foundation
 import HTTPTypes
-import Networking
 import Testing
+@testable import Networking
 @testable import NetworkingTestSupport
 
 @Test("The event recorder preserves the observed lifecycle order")
@@ -155,6 +155,88 @@ func progressRecorderMatchesRecordedAndFutureStates() async throws {
     #expect(recorded.last?.isComplete == true)
 
     await recorder.waitUntilRecorded { $0.bytesReceived == 2 }
+}
+
+@Test("Cancellation observed before admission wins over a delivered terminal event")
+func cancellationBeforeAdmissionWinsOverDeliveredTerminalEvent() async throws {
+    let url = try #require(URL(string: "https://mock.example/event-cancellation-race"))
+    let requestID = RequestID(rawValue: UUID())
+    let recorder = NetworkEventRecorder()
+    let gate = OneShotGate()
+
+    let waiter = Task { () -> NetworkEvent in
+        await gate.wait()
+        return try await recorder.waitForTerminalEvent(for: requestID)
+    }
+    waiter.cancel()
+
+    let transport = try MockNetworkTransport(stubs: [
+        NetworkStub(
+            matching: .method(.get),
+            response: .httpResponse(data: Data([0x2a]), response: HTTPResponse(status: .init(code: 200))),
+        ),
+    ])
+    let configuration = NetworkClient.Configuration()
+        .withEventObserver(recorder.observer)
+        .withRequestIDGenerator(StaticRequestIDGenerator(requestID: requestID))
+    let client = try NetworkClient.testing(configuration: configuration, transport: transport)
+
+    _ = try await client.send(recorderRequest(url: url))
+    _ = try await recorder.waitForTerminalEvent(for: requestID)
+    #expect(recorder.recordedEvents(for: requestID).map(eventLabel).contains("requestCompleted"))
+
+    await gate.open()
+
+    do {
+        _ = try await waiter.value
+        Issue.record("Expected the cancelled waiter to throw CancellationError")
+    } catch is CancellationError {
+        // Expected: the cancellation is observed before the waiter is admitted.
+    } catch {
+        Issue.record("Expected CancellationError, received \(error)")
+    }
+}
+
+@Test("Progress recording subscribes before startRecording returns")
+func progressRecordingSubscribesBeforeReturning() async {
+    let coordinator = NetworkProgressCoordinator()
+    let recorder = NetworkProgressRecorder()
+
+    recorder.startRecording(coordinator.progress)
+    #expect(coordinator.subscriberCount == 1)
+
+    coordinator.updateDownload(bytesReceived: 2, expectedBytesToReceive: 4)
+    coordinator.finish(successfully: false)
+
+    await recorder.waitUntilFinished()
+    #expect(recorder.recordedProgress().contains { $0.bytesReceived == 2 && $0.expectedBytesToReceive == 4 })
+}
+
+/// A one-shot gate that ignores cancellation, keeping a waiting task suspended until the test
+/// opens it so tests can order cancellation against event delivery.
+private actor OneShotGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var isOpen = false
+
+    func wait() async {
+        guard isOpen == false else {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            if isOpen {
+                continuation.resume()
+            } else {
+                self.continuation = continuation
+            }
+        }
+    }
+
+    func open() {
+        isOpen = true
+        continuation?.resume()
+        continuation = nil
+    }
 }
 
 private func recorderRequest(url: URL) -> Request<Data> {
