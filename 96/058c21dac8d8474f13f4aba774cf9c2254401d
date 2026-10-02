@@ -1,0 +1,36 @@
+Sources/Networking/NetworkProgress.swift
+  s_7a6e5a1c75951d::t_0e77908ff5b69c 214-216
+  s_7a6e5a1c75951d::t_5522fd7d9f6a10 217-218
+Tests/NetworkingTestSupportTests/NetworkRecorderTests.swift
+  s_7a6e5a1c75951d::t_d5da3880a81037 184-186
+  s_7a6e5a1c75951d::t_73d48c34328764 11
+  s_7a6e5a1c75951d::t_0e77908ff5b69c 160-183,187-195,197-240
+  s_7a6e5a1c75951d::t_947c6b24a65899 196
+  s_7a6e5a1c75951d::t_a65a73822747db 241
+Sources/NetworkingTestSupport/NetworkEventRecorder.swift
+  s_7a6e5a1c75951d::t_8463b8363fe6ca 21,58-59,80,86-90,92,94,96-97,99,101-120,122-123,136
+  s_7a6e5a1c75951d::t_9795abeff8f9cc 81-84
+  s_7a6e5a1c75951d::t_78440879d97a36 85
+CONTEXT.md
+  s_7a6e5a1c75951d::t_56df11f30d5fe2 74-78
+  s_7a6e5a1c75951d::t_6b5bfded7409ce 73
+Sources/NetworkingTestSupport/NetworkProgressRecorder.swift
+  s_7a6e5a1c75951d::t_56df11f30d5fe2 40-42
+  s_7a6e5a1c75951d::t_dfd0f339810aca 46-47,49-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "96058c21dac8d8474f13f4aba774cf9c2254401d",
+  "prompts": {},
+  "sessions": {
+    "s_7a6e5a1c75951d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f65d-dd83-72f3-84aa-edf89b8f640e",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
