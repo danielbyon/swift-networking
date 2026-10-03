@@ -5,6 +5,7 @@
 //  SPDX-License-Identifier: MIT
 //
 
+#if !os(visionOS)
 import Foundation
 import Networking
 import SnapshotTesting
@@ -131,3 +132,4 @@ extension Snapshotting where Value == JSONFixture, Format == String {
         }
     }
 }
+#endif

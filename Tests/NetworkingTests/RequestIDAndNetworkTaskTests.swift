@@ -7,12 +7,18 @@
 
 import Foundation
 import HTTPTypes
+#if !os(visionOS)
 import SnapshotTesting
+#endif
 import Synchronization
 import Testing
 @testable import Networking
 
+#if !os(visionOS)
 @Suite(.serialized, .snapshots)
+#else
+@Suite(.serialized)
+#endif
 struct RequestIDAndNetworkTaskTests {
     @Test("RequestID snapshots its Codable JSON shape and round-trips")
     func requestIDCodableJSONSnapshotAndRoundTrips() throws {
@@ -20,7 +26,9 @@ struct RequestIDAndNetworkTaskTests {
             rawValue: #require(UUID(uuidString: "01234567-89AB-CDEF-0123-456789ABCDEF")),
         )
 
+        #if !os(visionOS)
         assertSnapshot(of: requestID, as: .json)
+        #endif
 
         let encoded = try JSONEncoder().encode(requestID)
         let decoded = try JSONDecoder().decode(RequestID.self, from: encoded)

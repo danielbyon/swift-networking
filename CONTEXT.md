@@ -241,6 +241,11 @@ Authentication is the final outgoing request mutation stage.
 
 SnapshotTesting and CustomDump are test-only dependencies: the production Networking target does not
 depend on them, and NetworkingTestSupport is the only product that exposes snapshot integration.
+The canonical SnapshotTesting integration is available on iOS 27+, macOS 27+, tvOS 27+, and
+watchOS 27+ while the released upstream dependency lacks visionOS support. visionOS continues to
+support Networking and every NetworkingTestSupport feature that does not depend on SnapshotTesting.
+Remove this temporary restriction once a released upstream swift-snapshot-testing version supports
+visionOS.
 
 ## Platform boundary
 

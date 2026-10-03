@@ -5,6 +5,7 @@
 //  SPDX-License-Identifier: MIT
 //
 
+#if !os(visionOS)
 import Foundation
 import Networking
 
@@ -209,3 +210,4 @@ struct SnapshotProjectionRenderer: Sendable {
         return readable + " (reference interval: " + lossless + ")"
     }
 }
+#endif

@@ -6,11 +6,17 @@
 //
 
 import Foundation
+#if !os(visionOS)
 import SnapshotTesting
+#endif
 import Testing
 @testable import Networking
 
+#if !os(visionOS)
 @Suite(.serialized, .snapshots(record: .missing))
+#else
+@Suite(.serialized)
+#endif
 struct URLQueryEncoderTests {
     @Test
     func defaultEncodingSnapshot() throws {
@@ -26,7 +32,9 @@ struct URLQueryEncoderTests {
         let encoded = try URLQueryEncoder().encode(values)
 
         #expect(rendered(encoded).contains("timestamp=1970-01-01T00:20:34Z"))
+        #if !os(visionOS)
         assertSnapshot(of: rendered(encoded), as: .lines)
+        #endif
     }
 
     @Test
@@ -46,7 +54,9 @@ struct URLQueryEncoderTests {
 
         let encoded = try URLQueryEncoder(configuration: configuration).encode(values)
 
+        #if !os(visionOS)
         assertSnapshot(of: rendered(encoded), as: .lines)
+        #endif
     }
 
     @Test
@@ -62,7 +72,9 @@ struct URLQueryEncoderTests {
             return name + "\n" + rendered(encoded)
         }
 
+        #if !os(visionOS)
         assertSnapshot(of: outputs, as: .json)
+        #endif
     }
 
     @Test
@@ -77,6 +89,7 @@ struct URLQueryEncoderTests {
 
         #expect(rendered(bracketed) == "values[]=first\nvalues[]=second")
         #expect(rendered(repeated) == "values=first\nvalues=second")
+        #if !os(visionOS)
         assertSnapshot(
             of: [
                 "brackets\n" + rendered(bracketed),
@@ -84,6 +97,7 @@ struct URLQueryEncoderTests {
             ],
             as: .json,
         )
+        #endif
     }
 
     @Test

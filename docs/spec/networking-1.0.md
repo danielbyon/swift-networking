@@ -2395,6 +2395,8 @@ swift-custom-dump is used for structured diagnostics/diffs and non-JSON snapshot
 
 NetworkingTestSupport provides canonical stable snapshot strategies for sanitized forms of attempted/recorded requests, responses, attempt histories, network event sequences, and JSON.
 
+In 1.0, the canonical SnapshotTesting integration is available on iOS, macOS, tvOS, and watchOS while the released upstream `swift-snapshot-testing` dependency lacks visionOS support. visionOS continues to support `Networking` and all `NetworkingTestSupport` functionality that does not depend on SnapshotTesting. Remove this restriction once a released upstream `swift-snapshot-testing` version supports visionOS.
+
 Integration should follow normal SnapshotTesting conventions rather than introducing library-specific assertion wrappers.
 
 Generated/unstable values such as request IDs, timestamps, and generated boundaries are normalized/redacted where appropriate by default, with opt-in exact-value variants where useful.

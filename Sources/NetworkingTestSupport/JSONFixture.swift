@@ -93,6 +93,9 @@ public struct JSONFixture: Sendable {
 
     /// Loads a fixture from an explicit bundle resource.
     ///
+    /// When `name` has no extension, the resource is searched with a `.json` extension.
+    /// An explicitly supplied extension is used as written.
+    ///
     /// The resource name may include its file extension, such as `login-success.json`. Loading
     /// never consults `Bundle.main`, a caller test bundle, or `Bundle.module`; the supplied bundle
     /// is the only bundle searched, and it appears in every failure diagnostic.
@@ -112,7 +115,7 @@ public struct JSONFixture: Sendable {
         let parts = splitResourceName(name)
         guard let url = bundle.url(
             forResource: parts.base,
-            withExtension: parts.fileExtension,
+            withExtension: parts.fileExtension ?? "json",
             subdirectory: subdirectory,
         ) else {
             throw LoadingError.resourceNotFound(

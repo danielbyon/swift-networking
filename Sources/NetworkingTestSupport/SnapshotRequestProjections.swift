@@ -5,6 +5,7 @@
 //  SPDX-License-Identifier: MIT
 //
 
+#if !os(visionOS)
 import Foundation
 import HTTPTypes
 import Networking
@@ -123,3 +124,4 @@ struct SnapshotRecordedRequest: Sendable, Equatable {
         cancellationObserved = recorded.cancellationObserved
     }
 }
+#endif

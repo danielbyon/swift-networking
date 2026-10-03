@@ -65,15 +65,38 @@ func jsonFixtureEncodingAndDecodingUseConfiguredCodecs() throws {
 
 @Test("Fixture resources load from the caller-supplied bundle and report missing resources")
 func jsonFixtureResourcesRequireAnExplicitBundle() throws {
-    let fixture = try JSONFixture.resource(named: "sample.json", in: .module, subdirectory: "Fixtures")
+    let fixture = try JSONFixture.resource(
+        named: "sample",
+        in: .module,
+        subdirectory: "Fixtures",
+    )
+    let explicitlyExtendedFixture = try JSONFixture.resource(
+        named: "sample.json",
+        in: .module,
+        subdirectory: "Fixtures",
+    )
+
     #expect(try fixture.decode(SampleFixture.self) == SampleFixture(name: "fixture", items: [1, 2, 3]))
+    #expect(explicitlyExtendedFixture.data == fixture.data)
 
     do {
-        _ = try JSONFixture.resource(named: "missing.json", in: .module, subdirectory: "Fixtures")
+        _ = try JSONFixture.resource(named: "sample.txt", in: .module, subdirectory: "Fixtures")
+        Issue.record("Expected the explicitly supplied extension to be respected.")
+    } catch let error as JSONFixture.LoadingError {
+        #expect(error == .resourceNotFound(
+            resource: "sample.txt",
+            subdirectory: "Fixtures",
+            bundlePath: Bundle.module.bundlePath,
+        ))
+    }
+
+    do {
+        _ = try JSONFixture.resource(named: "missing", in: .module, subdirectory: "Fixtures")
         Issue.record("Expected the missing resource to fail.")
     } catch let error as JSONFixture.LoadingError {
         let description = try #require(error.errorDescription)
-        #expect(description.contains("missing.json"))
+        #expect(description.contains("resource 'missing'"))
+        #expect(!description.contains("missing.json"))
         #expect(description.contains("Fixtures"))
         #expect(description.contains(Bundle.module.bundlePath))
     }

@@ -5,6 +5,7 @@
 //  SPDX-License-Identifier: MIT
 //
 
+#if !os(visionOS)
 import Foundation
 import Networking
 
@@ -66,3 +67,4 @@ struct SnapshotResponse<Value: Sendable>: Sendable {
         retainedBody = response.retainedBody.map(SnapshotRetainedBody.init)
     }
 }
+#endif

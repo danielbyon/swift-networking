@@ -5,6 +5,7 @@
 //  SPDX-License-Identifier: MIT
 //
 
+#if !os(visionOS)
 import Foundation
 import HTTPTypes
 import Networking
@@ -549,3 +550,4 @@ private func makeEvents(requestID: RequestID, timestamp: Date) -> [NetworkEvent]
         ),
     ]
 }
+#endif
