@@ -40,6 +40,17 @@ The shared lifecycle object for one logical execution.
 
 It exposes RequestID, multicast progress, an async throwing value, and explicit shared cancellation.
 
+### Combine bridge
+
+`NetworkClient.publisher(for:)` is cold and creates one owned `NetworkTask` per subscription. Cancelling
+that subscription cancels its request and prevents later downstream delivery. `NetworkTask.valuePublisher`
+and `NetworkTask.progressPublisher` observe the existing shared task; cancelling either subscription
+stops only that observer and never becomes implicit shared cancellation. Value subscribers receive the
+task's stored terminal result. Progress subscribers follow Combine demand while retaining latest-state
+coalescing, replay, and successful terminal progress; task failure or cancellation finishes the progress
+publisher normally without a successful terminal state. These publishers exist only when Combine is
+available.
+
 ### NetworkingTestSupport mock transport
 
 `MockNetworkTransport` is the public actor-backed transport test harness. `NetworkStub`,
