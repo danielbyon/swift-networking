@@ -1,0 +1,99 @@
+Sources/NetworkingTestSupport/Snapshotting+NetworkingTestSupport.swift
+  s_6abafc680ba989::t_12f0c208ef139e 29,54,79
+  s_6abafc680ba989::t_c1ac0ae684cc4f 107,109
+  s_6abafc680ba989::t_726aba5830c1e3 1-23,32,40-52,56,61-73,82,88-98,103-104,106,118-133
+  s_6abafc680ba989::t_55c57e51e94aad 59,86,114
+  s_6abafc680ba989::t_e060358d798fa6 24-28,30-31,33-39,53,55,57-58,60,74-78,80-81,83-85,87,99-102,105,108,110-113,115-117
+Tests/NetworkingTestSupportTests/__Snapshots__/SnapshotStrategyTests/jsonSnapshotsRenderCanonicalJSON.1.json
+  s_6abafc680ba989::t_c22f6505f21b6c 1-8
+Tests/NetworkingTestSupportTests/__Snapshots__/SnapshotStrategyTests/networkEventSnapshotsSanitizeRunSpecificValues.1.txt
+  s_6abafc680ba989::t_c22f6505f21b6c 1-156
+Sources/NetworkingTestSupport/JSONFixture.swift
+  s_6abafc680ba989::t_d920dda6ebd3a3 1-199
+Tests/NetworkingTestSupportTests/__Snapshots__/SnapshotStrategyTests/responseSnapshotsRenderDecodedValues.1.txt
+  s_6abafc680ba989::t_c22f6505f21b6c 1-52
+Sources/NetworkingTestSupport/SnapshotRequestProjections.swift
+  s_6abafc680ba989::t_2d2babc0a5fcf8 1-21,23-26,28-36,38-40,42-113,115-125
+  s_6abafc680ba989::t_d7fbccd170f768 22,27,37,41,114
+Package.swift
+  s_6abafc680ba989::t_9b95efafb6ab6a 35-36,53,57
+  s_6abafc680ba989::t_1fe4129fb21081 55-56,58
+Sources/NetworkingTestSupport/SnapshotEventProjections.swift
+  s_6abafc680ba989::t_1931d62abc803a 49,61,73,178-179
+  s_6abafc680ba989::t_8531b6ed707c9b 244-274
+  s_6abafc680ba989::t_2a0ce7405d5eab 69-70,95-96,113
+  s_6abafc680ba989::t_09c33a917a2d77 1-48,50-60,62-68,71-72,74-94,97-112,114-177,180-243
+Sources/NetworkingTestSupport/SnapshotStability.swift
+  s_6abafc680ba989::t_aa8851cce79a06 117,119-120,126-128,135-138,144-147
+  s_6abafc680ba989::t_b9d0cdd42f15c0 1-30,80-87,114-116,121-125,130-134,139-143,148-165,170-171,177-178,182,211
+  s_6abafc680ba989::t_2caf758d5bbd36 179-181
+  s_6abafc680ba989::t_1275a583e652d1 183,185,192,196-202,205,210
+  s_6abafc680ba989::t_d29c5b8bd05732 166-169,172-176
+  s_6abafc680ba989::t_23cfec6af0612c 50
+  s_6abafc680ba989::t_037db069394b41 31-49,51-79,88-113,118,129
+  s_6abafc680ba989::t_cad47d16c0da47 184,186-191,193-195,203-204,206-209
+Tests/NetworkingTestSupportTests/SnapshotStrategyTests.swift
+  s_6abafc680ba989::t_4b066f7eb6a67e 395-449,462-463
+  s_6abafc680ba989::t_1f2f0f67ad57c9 454-461
+  s_6abafc680ba989::t_ecd7f9a21fda6c 53-55
+  s_6abafc680ba989::t_87129365f66045 141
+  s_6abafc680ba989::t_2ccd8fb0724581 149-150,158-162,205-208,231-233
+  s_6abafc680ba989::t_e4983cd5d68296 1-25,63-124,126,131-140,142-147,151-157,163-166,187,189-204,209-230,234-247,379-387,391-394,464-551
+  s_6abafc680ba989::t_7f1fc183698108 248-271,275-290,294-300,304-337,366,368,370-372,374-375,377-378
+  s_6abafc680ba989::t_e82306c24890f2 338-365,367,369,373,376,450-453
+  s_6abafc680ba989::t_be1a73842ddbab 167-186
+  s_6abafc680ba989::t_aa8851cce79a06 125,127-130,148,188,388-389
+  s_6abafc680ba989::t_a3ea6f3a85c648 26-52,56-62
+  s_6abafc680ba989::t_55c57e51e94aad 272-274,291-293,301-303
+  s_6abafc680ba989::t_3074d8bcd8a912 390
+Tests/NetworkingTestSupportTests/__Snapshots__/SnapshotStrategyTests/recordedRequestSnapshotsAreStableAndRedacted.1.txt
+  s_6abafc680ba989::t_c22f6505f21b6c 1-15
+Tests/NetworkingTestSupportTests/__Snapshots__/SnapshotStrategyTests/attemptHistorySnapshotsSanitizeUnstableValues.1.txt
+  s_6abafc680ba989::t_c22f6505f21b6c 1-34
+Sources/NetworkingTestSupport/JSONCanonicalization.swift
+  s_6abafc680ba989::t_5a199b270771d2 1-57
+Tests/NetworkingTestSupportTests/JSONFixtureTests.swift
+  s_6abafc680ba989::t_aa8851cce79a06 90,102,115-116,124-126
+  s_6abafc680ba989::t_4abd571ffa4e87 1-89,91-101,103-114,117-123,127-149
+CONTEXT.md
+  s_6abafc680ba989::t_a3c9e5dafad479 108-109
+  s_6abafc680ba989::t_2131626d2dabb6 88-103,117-126
+  s_6abafc680ba989::t_1aa08941126d36 104-107,110-116
+  s_6abafc680ba989::t_57c3716179a8af 233-235,242-243
+  s_6abafc680ba989::t_980ea58f5b6de6 244
+Tests/NetworkingTestSupportTests/Fixtures/sample.json
+  s_6abafc680ba989::t_4ad62d5fe94a31 1-4
+Sources/NetworkingTestSupport/RequestMatcher.swift
+  s_6abafc680ba989::t_387b4c5ead7f18 249-264
+Sources/NetworkingTestSupport/JSONSemanticMatcher.swift
+  s_6abafc680ba989::t_5252e10c47e908 456-457
+  s_6abafc680ba989::t_7772b4862ba542 88-92,254,311
+  s_6e45b70b7be182::t_f56f734f6f1e30 429-455,458-468
+Sources/NetworkingTestSupport/SnapshotResponseProjections.swift
+  s_6abafc680ba989::t_a9137875d44312 63
+  s_6abafc680ba989::t_9aec5b72825983 1-62,64-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3ccd63c0c0adc6c81ecfbc6a7750f9a1fd6368a2",
+  "prompts": {},
+  "sessions": {
+    "s_6abafc680ba989": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0fe9f-c8ec-79f0-8547-2694b8381958",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    },
+    "s_6e45b70b7be182": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e67d-0812-78b0-a9f2-1a3c3d5e671b",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
