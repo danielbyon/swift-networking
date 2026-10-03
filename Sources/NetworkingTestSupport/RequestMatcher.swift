@@ -246,6 +246,22 @@ public struct RequestMatcher: Sendable {
     }
 }
 
+extension RequestMatcher {
+    /// Wraps an already-validated semantic JSON predicate as a request-body matcher.
+    ///
+    /// Callers obtain the predicate from `JSONSemanticMatcher` so every JSON convenience in
+    /// TestSupport shares one decoded-equality model instead of introducing a parallel comparison.
+    static func semanticJSONBody(_ predicate: @escaping @Sendable (Data) -> Bool) -> Self {
+        Self { request in
+            guard let body = try? request.readBodyBytes(), predicate(body) else {
+                return .semanticJSONBody
+            }
+
+            return nil
+        }
+    }
+}
+
 private struct QueryItem: Sendable, Equatable {
     let name: String
     let value: String?

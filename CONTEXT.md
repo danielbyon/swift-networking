@@ -85,6 +85,45 @@ execution. Because every evaluated proposal reports a decision event, a scripted
 Foundation request has no HTTP representation fails the attempt before the policy evaluates it
 instead of continuing without that event.
 
+### JSONFixture
+
+An immutable, validated JSON document for tests. Create one from inline text or bytes, from a
+bundle resource with an explicit `Bundle`, or by encoding a model with a caller-configured
+`JSONEncoder`. A fixture keeps its original validated bytes for transport stubs, decodes a model
+with a caller-configured `JSONDecoder`, and produces request matchers plus in-memory HTTP and
+download stub responses that default to `200 OK` with a JSON content type. Bundle loading never
+guesses a bundle: the caller supplies the bundle to search, and loading failures name both the
+resource and the bundle that was searched.
+
+### Snapshot stability
+
+SnapshotTesting strategies render recorded requests, attempt histories, lifecycle event
+sequences, decoded responses, and JSON fixtures from structured CustomDump values instead of
+bespoke string renderers. Sanitized is the default: request identities, timestamps, durations,
+and generated locations become stable placeholders so equivalent runs produce identical
+snapshots. A snapshot that carries several logical requests numbers their identities by first
+appearance, so repeated appearances of one identity share an alias while distinct identities
+cannot collapse together; a snapshot with a single identity keeps the plain placeholder.
+`SnapshotStability.exact` is the explicit opt-in that restores the recorded identities, UTC
+ISO-8601 timestamps with fractional seconds plus the lossless reference-date interval, durations,
+and paths. Stability never relaxes
+privacy: sensitive header and query values stay redacted in both modes, so a test that snapshots
+HTTP fields adds the extra field names to the strategies' `additionalSensitiveHeaders` argument
+instead of expecting exact mode to reveal them. Free-form diagnostic text is reduced to its
+presence, thrown errors are identified by type only, retained response bytes are never rendered,
+and file-backed request bodies contribute location and size metadata without their bytes being
+read. Snapshotting a `Response<DownloadedFile>` reads the package-internal ownership location,
+so it never transfers cleanup ownership to the caller.
+
+### Semantic JSON equality
+
+Every JSON convenience in `NetworkingTestSupport` — `RequestMatcher.jsonBody(_:)` and
+`JSONFixture.requestMatcher()` — shares one decoded-equality model: object key order is
+insignificant, array order is significant, and numbers compare exactly by normalized spelling
+without floating-point tolerance. The `.json` snapshot strategy reuses the same number scanner,
+so canonical output keeps each source number's exact spelling, including arbitrary-precision
+decimals and arbitrary-size exponents, while Foundation supplies pretty printing and sorted keys.
+
 ### Logical execution
 
 One invocation of send or task(for:).
@@ -191,11 +230,22 @@ Authentication is the final outgoing request mutation stage.
 - Networking intentionally has heterogeneous errors rather than an umbrella error.
 - Equatable/Hashable conformances may not silently omit semantic state.
 - Library-authored unchecked concurrency escape hatches are prohibited.
+- JSON matching and JSON fixtures share one semantic equality model; numbers compare exactly, never with floating-point tolerance.
+- Snapshots sanitize generated identities, timestamps, durations, and generated paths by default; exact rendering is an explicit opt-in that never relaxes header, query, or error redaction.
+- Snapshotting a downloaded response is observational and never transfers file cleanup ownership.
 
 ## Public modules
 
 - Networking — production API and implementation.
 - NetworkingTestSupport — deterministic mock transport, fixtures, matchers, recording, snapshot support, test dependencies, and event/progress recorders.
+
+SnapshotTesting and CustomDump are test-only dependencies: the production Networking target does not
+depend on them, and NetworkingTestSupport is the only product that exposes snapshot integration.
+The canonical SnapshotTesting integration is available on iOS 27+, macOS 27+, tvOS 27+, and
+watchOS 27+ while the released upstream dependency lacks visionOS support. visionOS continues to
+support Networking and every NetworkingTestSupport feature that does not depend on SnapshotTesting.
+Remove this temporary restriction once a released upstream swift-snapshot-testing version supports
+visionOS.
 
 ## Platform boundary
 

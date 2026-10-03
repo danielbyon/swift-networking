@@ -7,12 +7,18 @@
 
 import Foundation
 import HTTPTypes
+#if !os(visionOS)
 import SnapshotTesting
+#endif
 import Synchronization
 import Testing
 @testable import Networking
 
+#if !os(visionOS)
 @Suite(.serialized, .snapshots(record: .missing))
+#else
+@Suite(.serialized)
+#endif
 struct QueryCompositionTests {
     @Test
     func relativeQueryLayersUsePrecedence() async throws {
@@ -52,7 +58,9 @@ struct QueryCompositionTests {
         #expect(builderCalls.withLock { $0 } == 1)
         #expect(await transport.executionCount() == 2)
         let recordedURLs = await transport.recordedURLs()
+        #if !os(visionOS)
         assertSnapshot(of: recordedURLs, as: .json)
+        #endif
     }
 
     @Test
@@ -80,7 +88,9 @@ struct QueryCompositionTests {
         _ = try await client.send(request)
 
         let recordedURLs = await transport.recordedURLs()
+        #if !os(visionOS)
         assertSnapshot(of: recordedURLs, as: .json)
+        #endif
     }
 
     @Test
@@ -106,7 +116,9 @@ struct QueryCompositionTests {
         let recordedURLs = await transport.recordedURLs()
         #expect(recordedURLs.first?.contains("?%FF=opaque&keep=%2f&") == true)
         #expect(recordedURLs.first?.contains("%25FF=literal-key") == true)
+        #if !os(visionOS)
         assertSnapshot(of: recordedURLs, as: .json)
+        #endif
     }
 
     @Test
@@ -147,7 +159,9 @@ struct QueryCompositionTests {
         #expect(second.requestID == firstID)
         #expect(await transport.executionCount() == 2)
         let recordedURLs = await transport.recordedURLs()
+        #if !os(visionOS)
         assertSnapshot(of: recordedURLs, as: .json)
+        #endif
     }
 
     @Test
@@ -183,7 +197,9 @@ struct QueryCompositionTests {
         ]))
 
         let recordedURLs = await transport.recordedURLs()
+        #if !os(visionOS)
         assertSnapshot(of: recordedURLs, as: .json)
+        #endif
     }
 
     @Test
@@ -219,7 +235,9 @@ struct QueryCompositionTests {
         #expect(itemBuilderCalls.withLock { $0 } == 0)
         #expect(codableSelectorCalls.withLock { $0 } == 0)
         let recordedURLs = await transport.recordedURLs()
+        #if !os(visionOS)
         assertSnapshot(of: recordedURLs, as: .json)
+        #endif
     }
 
     @Test

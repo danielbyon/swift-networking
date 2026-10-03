@@ -1,0 +1,15 @@
+SnapshotRecordedRequest(
+  request: SnapshotHTTPRequest(
+    method: "POST",
+    url: "https://example.com/upload?token=<redacted>&page=<redacted>",
+    headers: "[accept=application/json,authorization=<redacted>,cookie=<redacted>]"
+  ),
+  body: .file(
+    location: "<generated-location>",
+    byteCount: 18
+  ),
+  requestID: "<request-id>",
+  attemptNumber: 1,
+  requestContext: [],
+  cancellationObserved: false
+)

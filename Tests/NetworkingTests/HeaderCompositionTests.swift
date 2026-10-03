@@ -7,12 +7,18 @@
 
 import Foundation
 import HTTPTypes
+#if !os(visionOS)
 import SnapshotTesting
+#endif
 import Synchronization
 import Testing
 @testable import Networking
 
+#if !os(visionOS)
 @Suite(.serialized, .snapshots(record: .missing))
+#else
+@Suite(.serialized)
+#endif
 struct HeaderCompositionTests {
     @Test
     func inferredAcceptAndContentTypeFollowLayerPrecedence() throws {
@@ -146,7 +152,9 @@ struct HeaderCompositionTests {
             #expect(headerValues(added, in: fields) == ["added-value"])
             #expect(headerValues(discarded, in: fields).isEmpty)
         }
+        #if !os(visionOS)
         assertSnapshot(of: requests[0].headerFields, as: .json)
+        #endif
     }
 
     @Test

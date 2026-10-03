@@ -32,13 +32,27 @@ let package = Package(
             dependencies: [
                 "Networking",
                 .product(name: "HTTPTypes", package: "swift-http-types"),
+                .product(
+                    name: "SnapshotTesting",
+                    package: "swift-snapshot-testing",
+                    condition: .when(platforms: [.iOS, .macOS, .tvOS, .watchOS]),
+                ),
+                .product(
+                    name: "SnapshotTestingCustomDump",
+                    package: "swift-snapshot-testing",
+                    condition: .when(platforms: [.iOS, .macOS, .tvOS, .watchOS]),
+                ),
             ],
         ),
         .testTarget(
             name: "NetworkingTests",
             dependencies: [
                 "Networking",
-                .product(name: "SnapshotTesting", package: "swift-snapshot-testing"),
+                .product(
+                    name: "SnapshotTesting",
+                    package: "swift-snapshot-testing",
+                    condition: .when(platforms: [.iOS, .macOS, .tvOS, .watchOS]),
+                ),
             ],
             exclude: ["__Snapshots__"],
         ),
@@ -48,7 +62,16 @@ let package = Package(
                 "NetworkingTestSupport",
                 "Networking",
                 .product(name: "HTTPTypes", package: "swift-http-types"),
+                .product(
+                    name: "SnapshotTesting",
+                    package: "swift-snapshot-testing",
+                    condition: .when(platforms: [.iOS, .macOS, .tvOS, .watchOS]),
+                ),
             ],
+            // Argument order matters here: this toolchain's manifest compiler
+            // fails overload resolution if resources: precedes exclude:.
+            exclude: ["__Snapshots__"],
+            resources: [.copy("Fixtures")],
         ),
     ],
     swiftLanguageModes: [.v6],

@@ -85,8 +85,11 @@ private enum JSONSemanticValue: Sendable, Equatable {
     }
 }
 
-/// Replaces source number tokens with integer markers before Foundation decodes the JSON structure.
-private struct JSONNumberTokenRewriter {
+/// Replaces source number tokens before Foundation decodes the JSON structure.
+///
+/// The scanner is shared by semantic equality and canonical snapshot rendering so both agree on
+/// which byte ranges are numbers and which number spellings are valid.
+struct JSONNumberTokenRewriter {
     private let bytes: [UInt8]
 
     init(data: Data) {
@@ -248,7 +251,7 @@ private struct JSONNumberTokenRewriter {
 }
 
 /// A canonical decimal value represented as sign, significant digits, and an arbitrary-size exponent.
-private struct JSONNumber: Sendable, Equatable {
+struct JSONNumber: Sendable, Equatable {
     let isNegative: Bool
     let digits: String
     let exponent: JSONDecimalInteger
@@ -305,7 +308,7 @@ private struct JSONNumber: Sendable, Equatable {
 }
 
 /// A signed base-10 integer used to normalize exponents without a machine-width limit.
-private struct JSONDecimalInteger: Sendable, Equatable {
+struct JSONDecimalInteger: Sendable, Equatable {
     let isNegative: Bool
     let digits: String
 
@@ -421,5 +424,45 @@ private struct JSONDecimalInteger: Sendable, Equatable {
         }
 
         return 0
+    }
+}
+
+extension JSONNumberTokenRewriter {
+    /// Replaces every source number with a unique quoted placeholder.
+    ///
+    /// Canonical snapshot rendering uses this mode so Foundation can supply layout and
+    /// deterministic object-key ordering while each number keeps the exact spelling from the
+    /// source document, including arbitrary-precision decimals and arbitrary-size exponents.
+    ///
+    /// - Parameter prefix: A caller-unique prefix for the generated placeholders. The prefix must
+    ///   contain only characters that need no escaping inside a JSON string literal.
+    /// - Returns: The rewritten bytes and each replaced number's original source spelling, keyed by
+    ///   the index used in its placeholder.
+    func rewriteNumbersAsQuotedPlaceholders(
+        prefix: String,
+    ) throws -> (data: Data, numberSources: [String]) {
+        var rewritten: [UInt8] = []
+        var numberSources: [String] = []
+        var index = 0
+
+        while index < bytes.count {
+            let byte = bytes[index]
+            if byte == 0x22 {
+                let end = Self.stringEnd(in: bytes, startingAt: index)
+                rewritten.append(contentsOf: bytes[index ..< end])
+                index = end
+            } else if byte == 0x2d || Self.isDigit(byte) {
+                let end = try Self.numberEnd(in: bytes, startingAt: index)
+                let placeholder = "\"" + prefix + String(numberSources.count) + "\""
+                rewritten.append(contentsOf: Array(placeholder.utf8))
+                numberSources.append(String(decoding: bytes[index ..< end], as: UTF8.self))
+                index = end
+            } else {
+                rewritten.append(byte)
+                index += 1
+            }
+        }
+
+        return (Data(rewritten), numberSources)
     }
 }
