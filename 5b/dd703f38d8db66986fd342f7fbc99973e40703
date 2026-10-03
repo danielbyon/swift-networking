@@ -1,0 +1,55 @@
+Tests/NetworkingTestSupportTests/JSONFixtureTests.swift
+  s_6abafc680ba989::t_c0cd8907be74b7 68-78,80-85,87-91
+  s_6abafc680ba989::t_4c9cddfaee24af 94,98-99
+  s_6abafc680ba989::t_67d5be3e39e3f1 86
+Tests/NetworkingTestSupportTests/SnapshotStrategyTests.swift
+  s_6abafc680ba989::t_e47bd6741190ef 8
+  s_6abafc680ba989::t_d738a8ab8c8380 553
+Tests/NetworkingTests/QueryCompositionTests.swift
+  s_6abafc680ba989::t_91fa64943d31be 10,12,17,19-21,61,63,91,93,119,121,162,164,200,202,238,240
+Sources/NetworkingTestSupport/Snapshotting+NetworkingTestSupport.swift
+  s_6abafc680ba989::t_f0add68579e3bb 135
+  s_6abafc680ba989::t_e47bd6741190ef 8
+Tests/NetworkingTests/URLQueryEncoderTests.swift
+  s_6abafc680ba989::t_91fa64943d31be 9,11,15,17-19,35,37,57,59,75,77,92,100
+Sources/NetworkingTestSupport/SnapshotResponseProjections.swift
+  s_6abafc680ba989::t_e47bd6741190ef 8
+  s_6abafc680ba989::t_f0add68579e3bb 70
+Package.swift
+  s_6abafc680ba989::t_3a4c3102b4b4a0 35-44,51-55,65-69
+Tests/NetworkingTests/RequestIDAndNetworkTaskTests.swift
+  s_6abafc680ba989::t_91fa64943d31be 10,12,17,19-21,29,31
+CONTEXT.md
+  s_6abafc680ba989::t_3a4c3102b4b4a0 244-248
+docs/spec/networking-1.0.md
+  s_6abafc680ba989::t_3a4c3102b4b4a0 2398-2399
+Sources/NetworkingTestSupport/JSONFixture.swift
+  s_6abafc680ba989::t_3a4c3102b4b4a0 96-98,118
+Sources/NetworkingTestSupport/SnapshotEventProjections.swift
+  s_6abafc680ba989::t_f0add68579e3bb 276
+  s_6abafc680ba989::t_e47bd6741190ef 8
+Tests/NetworkingTests/HeaderCompositionTests.swift
+  s_6abafc680ba989::t_91fa64943d31be 10,12,17,19-21,155,157
+Sources/NetworkingTestSupport/SnapshotRequestProjections.swift
+  s_6abafc680ba989::t_e47bd6741190ef 8
+  s_6abafc680ba989::t_f0add68579e3bb 127
+Sources/NetworkingTestSupport/SnapshotStability.swift
+  s_6abafc680ba989::t_e47bd6741190ef 8
+  s_6abafc680ba989::t_f0add68579e3bb 213
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5bdd703f38d8db66986fd342f7fbc99973e40703",
+  "prompts": {},
+  "sessions": {
+    "s_6abafc680ba989": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0fe9f-c8ec-79f0-8547-2694b8381958",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
