@@ -1,0 +1,34 @@
+[
+  [0]: SnapshotAttemptMetrics(
+    requestID: "<request-id>",
+    attemptNumber: 1,
+    outcome: "acceptedResponse",
+    diagnosticReason: "<none>",
+    normalizedMetrics: SnapshotNormalizedMetrics(
+      duration: "<duration>",
+      redirectCount: 0,
+      requestBodyBytesSent: nil,
+      responseBodyBytesReceived: nil,
+      networkProtocolName: nil,
+      isReusedConnection: nil,
+      resourceFetchType: nil
+    ),
+    rawTaskMetrics: "<none>"
+  ),
+  [1]: SnapshotAttemptMetrics(
+    requestID: "<request-id>",
+    attemptNumber: 2,
+    outcome: "validationRejection",
+    diagnosticReason: "<present>",
+    normalizedMetrics: SnapshotNormalizedMetrics(
+      duration: "<duration>",
+      redirectCount: 1,
+      requestBodyBytesSent: nil,
+      responseBodyBytesReceived: nil,
+      networkProtocolName: nil,
+      isReusedConnection: nil,
+      resourceFetchType: nil
+    ),
+    rawTaskMetrics: "<none>"
+  )
+]
