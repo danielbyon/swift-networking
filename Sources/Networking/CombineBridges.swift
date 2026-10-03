@@ -255,19 +255,21 @@ private func makeProgressPublisher(
     let observer = Task { [task, relay, acknowledgements] in
         var iterator = task.progress.makeAsyncIterator()
         var latestGeneration: UInt64?
+        var finalProgressIsSuccessfulTerminal = false
         while let progress = await iterator.next() {
             guard !Task.isCancelled else {
                 return
             }
 
             latestGeneration = relay.send(progress)
+            finalProgressIsSuccessfulTerminal = progress.isComplete
         }
 
         guard !Task.isCancelled else {
             return
         }
 
-        if let latestGeneration {
+        if finalProgressIsSuccessfulTerminal, let latestGeneration {
             var acknowledgementIterator = acknowledgements.makeAsyncIterator()
             while let acknowledgedGeneration = await acknowledgementIterator.next() {
                 if acknowledgedGeneration >= latestGeneration {

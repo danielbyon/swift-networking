@@ -199,6 +199,63 @@ struct CombineBridgeTests {
         #expect(await transport.executionCount == 1)
     }
 
+    @Test("Failed task finishes a demand-starved progress subscription")
+    func failedTaskFinishesDemandStarvedProgressSubscription() async throws {
+        let requestID = RequestID(rawValue: UUID())
+        let initialProgressGate = CombineAsyncGate()
+        let failureGate = CombineAsyncGate()
+        let (initialReady, initialReadyContinuation) = AsyncStream<Bool>.makeStream()
+        let (pendingReady, pendingReadyContinuation) = AsyncStream<Bool>.makeStream()
+        let task = NetworkTask<Data>(requestID: requestID) { progress in
+            #expect(progress.startAttempt(attemptNumber: 1, expectedBytesToSend: 10))
+            progress.updateUpload(bytesSent: 1, expectedBytesToSend: 10)
+            initialReadyContinuation.yield(true)
+            await initialProgressGate.wait()
+
+            progress.updateUpload(bytesSent: 2, expectedBytesToSend: 10)
+            pendingReadyContinuation.yield(true)
+            await failureGate.wait()
+            throw ControlledTransportError.expectedFailure
+        }
+
+        var initialProgressIterator = initialReady.makeAsyncIterator()
+        #expect(await initialProgressIterator.next() == true)
+
+        let subscriber = ManualDemandSubscriber<NetworkProgress, Never>()
+        task.progressPublisher.receive(subscriber: subscriber)
+        subscriber.request(.max(1))
+        var events = subscriber.events.makeAsyncIterator()
+        let optionalInitialEvent = await events.next()
+        let initialEvent = try #require(optionalInitialEvent)
+        guard case let .value(initialProgress) = initialEvent else {
+            Issue.record("Expected active progress before the failure")
+            return
+        }
+
+        #expect(!initialProgress.isComplete)
+
+        await initialProgressGate.open()
+        var pendingProgressIterator = pendingReady.makeAsyncIterator()
+        #expect(await pendingProgressIterator.next() == true)
+        for _ in 0 ..< 32 {
+            await Task.yield()
+        }
+        await failureGate.open()
+
+        do {
+            _ = try await task.value
+            Issue.record("Expected the shared task to fail")
+        } catch is ControlledTransportError {}
+
+        await yieldUntilProgressCompletion(of: subscriber)
+        let completion = try #require(subscriber.completion)
+        #expect(completion.isFinished)
+        #expect(subscriber.values.count == 1)
+        #expect(subscriber.values.first?.isComplete == false)
+        let finishEvent = try #require(await events.next())
+        #expect(finishEvent.isFinished)
+    }
+
     @Test("Progress publisher honors demand and replays the latest successful state")
     func progressPublisherHonorsDemandAndReplaysLatestSuccessfulState() async throws {
         let requestID = RequestID(rawValue: UUID())
@@ -333,6 +390,68 @@ struct CombineBridgeTests {
         #expect(finishEvent.isFinished)
         #expect(subscriber.completion?.isFinished == true)
         #expect(subscriber.values.count == 1)
+    }
+
+    @Test("Shared cancellation finishes a demand-starved progress subscription")
+    func sharedCancellationFinishesDemandStarvedProgressSubscription() async throws {
+        let requestID = RequestID(rawValue: UUID())
+        let response = Response(
+            value: Data([0x2a]),
+            httpResponse: HTTPResponse(status: .init(code: 200)),
+            requestID: requestID,
+        )
+        let initialProgressGate = CombineAsyncGate()
+        let completionGate = CombineAsyncGate()
+        let (initialReady, initialReadyContinuation) = AsyncStream<Bool>.makeStream()
+        let (pendingReady, pendingReadyContinuation) = AsyncStream<Bool>.makeStream()
+        let task = NetworkTask<Data>(requestID: requestID) { progress in
+            #expect(progress.startAttempt(attemptNumber: 1, expectedBytesToSend: 10))
+            progress.updateUpload(bytesSent: 1, expectedBytesToSend: 10)
+            initialReadyContinuation.yield(true)
+            await initialProgressGate.wait()
+
+            progress.updateUpload(bytesSent: 2, expectedBytesToSend: 10)
+            pendingReadyContinuation.yield(true)
+            await completionGate.wait()
+            return response
+        }
+
+        var initialProgressIterator = initialReady.makeAsyncIterator()
+        #expect(await initialProgressIterator.next() == true)
+
+        let subscriber = ManualDemandSubscriber<NetworkProgress, Never>()
+        task.progressPublisher.receive(subscriber: subscriber)
+        subscriber.request(.max(1))
+        var events = subscriber.events.makeAsyncIterator()
+        let initialEvent = try #require(await events.next())
+        guard case let .value(initialProgress) = initialEvent else {
+            Issue.record("Expected active progress before shared cancellation")
+            return
+        }
+
+        #expect(!initialProgress.isComplete)
+
+        await initialProgressGate.open()
+        var pendingProgressIterator = pendingReady.makeAsyncIterator()
+        #expect(await pendingProgressIterator.next() == true)
+        for _ in 0 ..< 32 {
+            await Task.yield()
+        }
+
+        task.cancel()
+        await completionGate.open()
+        do {
+            _ = try await task.value
+            Issue.record("Expected NetworkTask.cancel() to cancel the shared value")
+        } catch is CancellationError {}
+
+        await yieldUntilProgressCompletion(of: subscriber)
+        let completion = try #require(subscriber.completion)
+        #expect(completion.isFinished)
+        #expect(subscriber.values.count == 1)
+        #expect(subscriber.values.first?.isComplete == false)
+        let finishEvent = try #require(await events.next())
+        #expect(finishEvent.isFinished)
     }
 
     @Test("Cancelling a progress subscriber leaves the shared task running")
@@ -638,6 +757,17 @@ private actor ValuePublisherCancellationHarness {
         cancellable?.cancel()
         cancellable = nil
         deliveryState.markCancelled()
+    }
+}
+
+private func yieldUntilProgressCompletion(
+    of subscriber: ManualDemandSubscriber<NetworkProgress, Never>,
+) async {
+    for _ in 0 ..< 512 {
+        if subscriber.completion != nil {
+            return
+        }
+        await Task.yield()
     }
 }
 
