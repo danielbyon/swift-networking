@@ -256,6 +256,129 @@ struct CombineBridgeTests {
         #expect(finishEvent.isFinished)
     }
 
+    #if DEBUG
+    @Test("Successful terminal progress waits for resumed demand")
+    func successfulTerminalProgressWaitsForResumedDemand() async throws {
+        let requestID = RequestID(rawValue: UUID())
+        let response = Response(
+            value: Data([0x2a]),
+            httpResponse: HTTPResponse(status: .init(code: 200)),
+            requestID: requestID,
+        )
+        let completionGate = CombineAsyncGate()
+        let (started, startedContinuation) = AsyncStream<Bool>.makeStream()
+        let task = NetworkTask<Data>(requestID: requestID) { progress in
+            #expect(progress.startAttempt(attemptNumber: 1, expectedBytesToSend: 10))
+            progress.updateUpload(bytesSent: 5, expectedBytesToSend: 10)
+            startedContinuation.yield(true)
+            await completionGate.wait()
+            return response
+        }
+        var startedIterator = started.makeAsyncIterator()
+        #expect(await startedIterator.next() == true)
+
+        let (terminalBuffered, terminalBufferedContinuation) = AsyncStream<Bool>.makeStream()
+        let publisher = makeProgressPublisher(
+            for: task,
+            onPendingTerminalProgress: { sequenceFinished in
+                _ = terminalBufferedContinuation.yield(sequenceFinished)
+            },
+        )
+        let subscriber = ManualDemandSubscriber<NetworkProgress, Never>()
+        publisher.receive(subscriber: subscriber)
+        subscriber.request(.max(1))
+        var events = subscriber.events.makeAsyncIterator()
+        let optionalActiveEvent = await events.next()
+        let activeEvent = try #require(optionalActiveEvent)
+        guard case let .value(activeProgress) = activeEvent else {
+            Issue.record("Expected active progress before successful completion")
+            return
+        }
+
+        #expect(!activeProgress.isComplete)
+
+        await completionGate.open()
+        let result = try await task.value
+        #expect(result.requestID == requestID)
+
+        var terminalBufferedIterator = terminalBuffered.makeAsyncIterator()
+        #expect(await terminalBufferedIterator.next() == false)
+        #expect(await terminalBufferedIterator.next() == true)
+        #expect(subscriber.values.count == 1)
+        #expect(subscriber.completion == nil)
+
+        subscriber.request(.max(1))
+        let optionalTerminalEvent = await events.next()
+        let terminalEvent = try #require(optionalTerminalEvent)
+        guard case let .value(terminalProgress) = terminalEvent else {
+            Issue.record("Expected pending successful terminal progress after demand resumed")
+            return
+        }
+
+        #expect(terminalProgress.isComplete)
+
+        let optionalFinishEvent = await events.next()
+        let finishEvent = try #require(optionalFinishEvent)
+        #expect(finishEvent.isFinished)
+    }
+    #endif
+
+    @Test("Progress publisher honors additional demand returned by the subscriber")
+    func progressPublisherHonorsAdditionalDemandReturnedBySubscriber() async throws {
+        let firstProgressGate = CombineAsyncGate()
+        let failureGate = CombineAsyncGate()
+        let (firstProgressReady, firstProgressReadyContinuation) = AsyncStream<Bool>.makeStream()
+        let (secondProgressReady, secondProgressReadyContinuation) = AsyncStream<Bool>.makeStream()
+        let task = NetworkTask<Data>(requestID: RequestID(rawValue: UUID())) { progress in
+            #expect(progress.startAttempt(attemptNumber: 1, expectedBytesToSend: 10))
+            progress.updateUpload(bytesSent: 1, expectedBytesToSend: 10)
+            firstProgressReadyContinuation.yield(true)
+            await firstProgressGate.wait()
+
+            progress.updateUpload(bytesSent: 2, expectedBytesToSend: 10)
+            secondProgressReadyContinuation.yield(true)
+            await failureGate.wait()
+            throw ControlledTransportError.expectedFailure
+        }
+        var firstProgressIterator = firstProgressReady.makeAsyncIterator()
+        #expect(await firstProgressIterator.next() == true)
+
+        let subscriber = ManualDemandSubscriber<NetworkProgress, Never>(
+            additionalDemandOnFirstValue: .max(1),
+        )
+        task.progressPublisher.receive(subscriber: subscriber)
+        subscriber.request(.max(1))
+        var events = subscriber.events.makeAsyncIterator()
+        let firstEvent = try #require(await events.next())
+        guard case let .value(firstProgress) = firstEvent else {
+            Issue.record("Expected the first active progress state")
+            return
+        }
+
+        #expect(firstProgress.bytesSent == 1)
+
+        await firstProgressGate.open()
+        var secondProgressIterator = secondProgressReady.makeAsyncIterator()
+        #expect(await secondProgressIterator.next() == true)
+        let secondEvent = try #require(await events.next())
+        guard case let .value(secondProgress) = secondEvent else {
+            Issue.record("Expected additional demand to deliver the next progress state")
+            return
+        }
+
+        #expect(secondProgress.bytesSent == 2)
+
+        await failureGate.open()
+        do {
+            _ = try await task.value
+            Issue.record("Expected the shared task to fail")
+        } catch is ControlledTransportError {}
+
+        let finishEvent = try #require(await events.next())
+        #expect(finishEvent.isFinished)
+        #expect(subscriber.values.count == 2)
+    }
+
     @Test("Progress publisher honors demand and replays the latest successful state")
     func progressPublisherHonorsDemandAndReplaysLatestSuccessfulState() async throws {
         let requestID = RequestID(rawValue: UUID())
@@ -603,15 +726,21 @@ private final class ManualDemandSubscriber<Output: Sendable, FailureType: Error>
     private let continuation: AsyncStream<ManualDemandEvent<Output>>.Continuation
     private let cancelOnSubscription: Bool
     private let cancelOnValue: Bool
+    private var additionalDemandOnFirstValue: Subscribers.Demand
     let events: AsyncStream<ManualDemandEvent<Output>>
     private var subscription: (any Subscription)?
     private var receivedValues: [Output] = []
     private var recordedCompletion: ManualDemandEvent<Output>?
 
-    init(cancelOnSubscription: Bool = false, cancelOnValue: Bool = false) {
+    init(
+        cancelOnSubscription: Bool = false,
+        cancelOnValue: Bool = false,
+        additionalDemandOnFirstValue: Subscribers.Demand = .none,
+    ) {
         (events, continuation) = AsyncStream.makeStream()
         self.cancelOnSubscription = cancelOnSubscription
         self.cancelOnValue = cancelOnValue
+        self.additionalDemandOnFirstValue = additionalDemandOnFirstValue
     }
 
     var values: [Output] {
@@ -630,16 +759,21 @@ private final class ManualDemandSubscriber<Output: Sendable, FailureType: Error>
     }
 
     func receive(_ input: Output) -> Subscribers.Demand {
-        let subscriptionToCancel = stateLock.withLock { () -> (any Subscription)? in
+        let (subscriptionToCancel, additionalDemand) = stateLock.withLock { () -> (
+            (any Subscription)?,
+            Subscribers.Demand,
+        ) in
             receivedValues.append(input)
+            let additionalDemand = additionalDemandOnFirstValue
+            additionalDemandOnFirstValue = .none
             if cancelOnValue {
-                return subscription
+                return (subscription, additionalDemand)
             }
-            return nil
+            return (nil, additionalDemand)
         }
         continuation.yield(.value(input))
         subscriptionToCancel?.cancel()
-        return .none
+        return additionalDemand
     }
 
     func receive(completion: Subscribers.Completion<FailureType>) {

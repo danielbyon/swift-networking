@@ -167,131 +167,427 @@ private func terminalPublisher<Value: Sendable>(
         .eraseToAnyPublisher()
 }
 
-private struct ProgressEnvelope: Sendable {
-    let generation: UInt64
-    let progress: NetworkProgress
+/// Creates one independent asynchronous progress observation for each Combine subscriber.
+private struct TaskProgressPublisher<Value: Sendable>: Publisher {
+    typealias Output = NetworkProgress
+    typealias Failure = Never
+
+    let task: NetworkTask<Value>
+    let onPendingTerminalProgress: @Sendable (_ sequenceFinished: Bool) -> Void
+
+    func receive<Downstream: Subscriber>(subscriber: Downstream)
+        where Downstream.Input == NetworkProgress, Downstream.Failure == Never {
+        let mailbox = ProgressMailbox()
+        let subscription = TaskProgressSubscription(
+            downstream: subscriber,
+            mailbox: mailbox,
+        )
+        subscriber.receive(subscription: subscription)
+        subscription.startObserving(
+            task: task,
+            onPendingTerminalProgress: onPendingTerminalProgress,
+        )
+    }
 }
 
-/// Uses Combine's latest-value storage while serializing subject access with its async observer.
-private final class ProgressRelay: Sendable {
+/// Stores demand and the single latest unseen progress state for one subscriber.
+///
+/// The subject forwards values only after this mailbox has consumed downstream demand. It is not
+/// used as a backpressure buffer; the per-subscriber state below owns that contract.
+private enum ProgressLifecycle {
+    case observing
+    case successfulTerminalPending(sequenceFinished: Bool)
+    case successfulTerminalDelivered(sequenceFinished: Bool)
+    case finished
+    case cancelled
+
+    var isStopped: Bool {
+        switch self {
+        case .finished,
+             .cancelled:
+            true
+        case .observing,
+             .successfulTerminalPending,
+             .successfulTerminalDelivered:
+            false
+        }
+    }
+}
+
+/// Owns the per-subscriber backpressure state and forwards admitted values to its Combine adapter.
+///
+/// The private passthrough subject carries only values for which this mailbox has already consumed
+/// demand. It does not cache progress; `pendingProgress` is the sole latest-state buffer.
+private final class ProgressMailbox: Sendable {
+    private enum DemandBalance: Sendable {
+        case finite(Int)
+        case unlimited
+
+        mutating func add(_ demand: Subscribers.Demand) {
+            guard let value = demand.max else {
+                self = .unlimited
+                return
+            }
+            guard value > 0 else {
+                return
+            }
+
+            switch self {
+            case .unlimited:
+                break
+            case let .finite(current):
+                let (sum, overflow) = current.addingReportingOverflow(value)
+                self = overflow ? .unlimited : .finite(sum)
+            }
+        }
+
+        mutating func consumeOne() -> Bool {
+            switch self {
+            case .unlimited:
+                return true
+            case let .finite(value) where value > 0:
+                self = .finite(value - 1)
+                return true
+            case .finite:
+                return false
+            }
+        }
+    }
+
     private struct State {
-        let subject = CurrentValueSubject<ProgressEnvelope?, Never>(nil)
-        var generation: UInt64 = 0
-        var isFinished = false
-        var isCancelled = false
+        let subject = PassthroughSubject<NetworkProgress, Never>()
+        var demand = DemandBalance.finite(0)
+        var pendingProgress: NetworkProgress?
+        var lifecycle = ProgressLifecycle.observing
     }
 
     private let deliveryLock = NSRecursiveLock()
     private let state = Mutex(State())
 
-    func publisher(
-        acknowledge: @escaping @Sendable (UInt64) -> Void,
-    ) -> AnyPublisher<NetworkProgress, Never> {
-        state.withLock { state in
-            state.subject
-                .compactMap(\.self)
-                .handleEvents(receiveOutput: { acknowledge($0.generation) })
-                .map(\.progress)
-                .eraseToAnyPublisher()
+    var publisher: AnyPublisher<NetworkProgress, Never> {
+        state.withLock { $0.subject.eraseToAnyPublisher() }
+    }
+
+    func withDeliveryLock(_ operation: () -> Void) {
+        deliveryLock.withLock(operation)
+    }
+
+    var isCancelled: Bool {
+        state.withLock {
+            if case .cancelled = $0.lifecycle {
+                true
+            } else {
+                false
+            }
         }
     }
 
-    func send(_ progress: NetworkProgress) -> UInt64? {
+    func request(_ demand: Subscribers.Demand) {
+        guard demand > .none else {
+            return
+        }
+
         deliveryLock.withLock {
-            let delivery = state.withLock { state -> (
-                CurrentValueSubject<ProgressEnvelope?, Never>,
-                ProgressEnvelope,
-            )? in
-                guard !state.isFinished, !state.isCancelled else {
+            let pending = state.withLock { state -> NetworkProgress? in
+                guard !state.lifecycle.isStopped else {
                     return nil
                 }
 
-                state.generation += 1
-                let envelope = ProgressEnvelope(generation: state.generation, progress: progress)
-                return (state.subject, envelope)
+                state.demand.add(demand)
+                guard let pending = state.pendingProgress, state.demand.consumeOne() else {
+                    return nil
+                }
+
+                state.pendingProgress = nil
+                return pending
             }
-            guard let (subject, envelope) = delivery else {
+            if let pending {
+                emit(pending)
+            }
+        }
+    }
+
+    func receive(
+        _ progress: NetworkProgress,
+        onPendingTerminalProgress: @Sendable (_ sequenceFinished: Bool) -> Void,
+    ) {
+        deliveryLock.withLock {
+            var progressToDeliver: NetworkProgress?
+            var storedTerminal = false
+            state.withLock { state in
+                guard case .observing = state.lifecycle else {
+                    return
+                }
+
+                if state.demand.consumeOne() {
+                    progressToDeliver = progress
+                } else {
+                    state.pendingProgress = progress
+                    if progress.isComplete {
+                        state.lifecycle = .successfulTerminalPending(sequenceFinished: false)
+                        storedTerminal = true
+                    }
+                }
+            }
+
+            if let progressToDeliver {
+                emit(progressToDeliver)
+            } else if storedTerminal {
+                onPendingTerminalProgress(false)
+            }
+        }
+    }
+
+    func finish(
+        finalProgress: NetworkProgress?,
+        onPendingTerminalProgress: @Sendable (_ sequenceFinished: Bool) -> Void,
+    ) {
+        deliveryLock.withLock {
+            var progressToDeliver: NetworkProgress?
+            var shouldFinish = false
+            var storedTerminal = false
+
+            state.withLock { state in
+                guard !state.lifecycle.isStopped else {
+                    return
+                }
+                guard let terminalProgress = finalProgress, terminalProgress.isComplete else {
+                    state.pendingProgress = nil
+                    state.lifecycle = .finished
+                    shouldFinish = true
+                    return
+                }
+
+                switch state.lifecycle {
+                case .observing:
+                    state.lifecycle = .successfulTerminalPending(sequenceFinished: true)
+                    if state.demand.consumeOne() {
+                        state.pendingProgress = nil
+                        progressToDeliver = terminalProgress
+                    } else {
+                        state.pendingProgress = terminalProgress
+                        storedTerminal = true
+                    }
+                case .successfulTerminalPending:
+                    state.lifecycle = .successfulTerminalPending(sequenceFinished: true)
+                    if state.demand.consumeOne() {
+                        state.pendingProgress = nil
+                        progressToDeliver = terminalProgress
+                    } else {
+                        storedTerminal = true
+                    }
+                case .successfulTerminalDelivered:
+                    state.lifecycle = .finished
+                    shouldFinish = true
+                case .finished,
+                     .cancelled:
+                    return
+                }
+            }
+
+            if storedTerminal {
+                onPendingTerminalProgress(true)
+            }
+            if let progressToDeliver {
+                emit(progressToDeliver)
+            } else if shouldFinish {
+                sendFinished()
+            }
+        }
+    }
+
+    func cancel(_ cleanUp: () -> Void) {
+        deliveryLock.withLock {
+            state.withLock { state in
+                state.lifecycle = .cancelled
+                state.pendingProgress = nil
+            }
+            cleanUp()
+        }
+    }
+
+    private func emit(_ progress: NetworkProgress) {
+        let subject = state.withLock { state -> PassthroughSubject<NetworkProgress, Never>? in
+            guard !state.lifecycle.isStopped else {
                 return nil
             }
 
-            subject.send(envelope)
-            return envelope.generation
+            return state.subject
+        }
+        guard let subject else {
+            return
+        }
+
+        subject.send(progress)
+        guard progress.isComplete else {
+            return
+        }
+
+        let shouldFinish = state.withLock { state -> Bool in
+            switch state.lifecycle {
+            case .observing:
+                state.lifecycle = .successfulTerminalDelivered(sequenceFinished: false)
+                return false
+            case .successfulTerminalPending(sequenceFinished: true):
+                state.lifecycle = .finished
+                return true
+            case .successfulTerminalPending(sequenceFinished: false):
+                state.lifecycle = .successfulTerminalDelivered(sequenceFinished: false)
+                return false
+            case .successfulTerminalDelivered,
+                 .finished,
+                 .cancelled:
+                return false
+            }
+        }
+        if shouldFinish {
+            sendFinished()
         }
     }
 
-    func finish() {
-        deliveryLock.withLock {
-            let subject = state.withLock { state -> CurrentValueSubject<ProgressEnvelope?, Never>? in
-                guard !state.isFinished, !state.isCancelled else {
-                    return nil
-                }
-
-                state.isFinished = true
-                return state.subject
+    private func sendFinished() {
+        let subject = state.withLock { state -> PassthroughSubject<NetworkProgress, Never>? in
+            guard case .finished = state.lifecycle else {
+                return nil
             }
-            subject?.send(completion: .finished)
+
+            return state.subject
         }
+        subject?.send(completion: .finished)
+    }
+}
+
+/// Bridges one progress mailbox to a Combine subscriber and owns only its observation task.
+private final class TaskProgressSubscription<Downstream: Subscriber>: Subscription
+    where Downstream.Input == NetworkProgress, Downstream.Failure == Never {
+    private let mailbox: ProgressMailbox
+    private var downstream: Downstream?
+    private var observation: Task<Void, Never>?
+    private var cancellable: AnyCancellable?
+
+    init(downstream: Downstream, mailbox: ProgressMailbox) {
+        self.downstream = downstream
+        self.mailbox = mailbox
+        cancellable = mailbox.publisher.sink(
+            receiveCompletion: { [weak self] completion in
+                self?.receive(completion: completion)
+            },
+            receiveValue: { [weak self] progress in
+                self?.receive(progress)
+            },
+        )
+    }
+
+    func request(_ demand: Subscribers.Demand) {
+        mailbox.request(demand)
     }
 
     func cancel() {
-        deliveryLock.withLock {
-            state.withLock { $0.isCancelled = true }
+        mailbox.cancel {
+            observation?.cancel()
+            observation = nil
+            cancellable?.cancel()
+            cancellable = nil
+            downstream = nil
+        }
+    }
+
+    func startObserving(
+        task: NetworkTask<some Sendable>,
+        onPendingTerminalProgress: @escaping @Sendable (_ sequenceFinished: Bool) -> Void,
+    ) {
+        mailbox.withDeliveryLock {
+            guard !mailbox.isCancelled else {
+                return
+            }
+
+            observation = Task { [task, mailbox, onPendingTerminalProgress] in
+                var iterator = task.progress.makeAsyncIterator()
+                var finalProgress: NetworkProgress?
+                while let progress = await iterator.next() {
+                    guard !Task.isCancelled else {
+                        return
+                    }
+
+                    finalProgress = progress
+                    mailbox.receive(
+                        progress,
+                        onPendingTerminalProgress: onPendingTerminalProgress,
+                    )
+                }
+
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                mailbox.finish(
+                    finalProgress: finalProgress,
+                    onPendingTerminalProgress: onPendingTerminalProgress,
+                )
+            }
+        }
+    }
+
+    private func receive(_ progress: NetworkProgress) {
+        mailbox.withDeliveryLock {
+            guard let downstream else {
+                return
+            }
+
+            mailbox.request(downstream.receive(progress))
+        }
+    }
+
+    private func receive(completion: Subscribers.Completion<Never>) {
+        mailbox.withDeliveryLock {
+            guard let downstream else {
+                return
+            }
+
+            self.downstream = nil
+            observation = nil
+            downstream.receive(completion: completion)
         }
     }
 }
 
+/// Creates a demand-aware publisher for one task's progress sequence.
+///
+/// - Parameters:
+///   - task: The shared logical task whose progress is observed.
+/// Creates a demand-aware publisher for one task's progress sequence.
 private func makeProgressPublisher(
     for task: NetworkTask<some Sendable>,
 ) -> AnyPublisher<NetworkProgress, Never> {
-    let relay = ProgressRelay()
-    let (acknowledgements, acknowledgementContinuation) = AsyncStream<UInt64>.makeStream(
-        bufferingPolicy: .bufferingNewest(1),
+    makeProgressPublisherImplementation(for: task, onPendingTerminalProgress: { _ in })
+}
+
+#if DEBUG
+/// Creates a progress publisher with a synchronization hook for deterministic bridge tests.
+///
+/// - Parameters:
+///   - task: The shared logical task whose progress is observed.
+///   - onPendingTerminalProgress: Called after successful terminal progress is buffered at zero
+///     demand, with whether the progress sequence has finished.
+func makeProgressPublisher(
+    for task: NetworkTask<some Sendable>,
+    onPendingTerminalProgress: @escaping @Sendable (_ sequenceFinished: Bool) -> Void,
+) -> AnyPublisher<NetworkProgress, Never> {
+    makeProgressPublisherImplementation(
+        for: task,
+        onPendingTerminalProgress: onPendingTerminalProgress,
     )
-    let observation = CombineObservation()
-    let publisher = relay.publisher { generation in
-        acknowledgementContinuation.yield(generation)
-    }
+}
+#endif
 
-    let observer = Task { [task, relay, acknowledgements] in
-        var iterator = task.progress.makeAsyncIterator()
-        var latestGeneration: UInt64?
-        var finalProgressIsSuccessfulTerminal = false
-        while let progress = await iterator.next() {
-            guard !Task.isCancelled else {
-                return
-            }
-
-            latestGeneration = relay.send(progress)
-            finalProgressIsSuccessfulTerminal = progress.isComplete
-        }
-
-        guard !Task.isCancelled else {
-            return
-        }
-
-        if finalProgressIsSuccessfulTerminal, let latestGeneration {
-            var acknowledgementIterator = acknowledgements.makeAsyncIterator()
-            while let acknowledgedGeneration = await acknowledgementIterator.next() {
-                if acknowledgedGeneration >= latestGeneration {
-                    break
-                }
-            }
-        }
-
-        guard !Task.isCancelled else {
-            return
-        }
-
-        relay.finish()
-    }
-    observation.install(observer)
-
-    return publisher
-        .handleEvents(receiveCancel: {
-            relay.cancel()
-            acknowledgementContinuation.finish()
-            observation.cancel()
-        })
-        .eraseToAnyPublisher()
+private func makeProgressPublisherImplementation(
+    for task: NetworkTask<some Sendable>,
+    onPendingTerminalProgress: @escaping @Sendable (_ sequenceFinished: Bool) -> Void,
+) -> AnyPublisher<NetworkProgress, Never> {
+    TaskProgressPublisher(
+        task: task,
+        onPendingTerminalProgress: onPendingTerminalProgress,
+    )
+    .eraseToAnyPublisher()
 }
 #endif
