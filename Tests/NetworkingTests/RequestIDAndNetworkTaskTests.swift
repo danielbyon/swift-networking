@@ -325,7 +325,7 @@ struct RequestIDAndNetworkTaskTests {
     }
 }
 
-private enum ControlledTransportError: Error, Equatable, Sendable {
+enum ControlledTransportError: Error, Equatable, Sendable {
     case expectedFailure
 }
 
@@ -359,7 +359,7 @@ private actor CancellationGate {
     }
 }
 
-private actor ControlledNetworkTransport: NetworkTransport {
+actor ControlledNetworkTransport: NetworkTransport {
     enum Outcome: Sendable {
         case success(Data, HTTPResponse)
         case failure(ControlledTransportError)
