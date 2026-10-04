@@ -1,0 +1,48 @@
+docs/adr/0004-client-owned-session-and-private-transport.md
+  s_f62532abd49a65::t_fd0c2df74b6496 10-12,16-20,31
+  s_f62532abd49a65::t_4c6f9dbd288b3f 1-9,13-15,21-30
+Documentation/AgentGuide.md
+  s_f62532abd49a65::t_71a4a21654bd12 1-3,6-52,54-63,67-83,86-89,93-97
+  s_f62532abd49a65::t_586b92ec39a7c6 53,64-66
+  s_f62532abd49a65::t_e2e6c5f92a9a09 90-92
+  s_f62532abd49a65::t_dd73e491cd7665 4-5,84-85
+docs/adr/0006-logical-execution-replay-and-cancellation.md
+  s_f62532abd49a65::t_4c6f9dbd288b3f 1-35
+docs/adr/0007-bounded-observers-and-latest-state-progress.md
+  s_f62532abd49a65::t_dd73e491cd7665 28
+  s_f62532abd49a65::t_4c6f9dbd288b3f 1-27
+docs/adr/0003-endpoint-contract-and-request-invocation.md
+  s_f62532abd49a65::t_4c6f9dbd288b3f 1-8,14-28
+  s_f62532abd49a65::t_fd0c2df74b6496 9-13,29
+docs/adr/0008-file-backed-download-ownership.md
+  s_f62532abd49a65::t_4c6f9dbd288b3f 1-15,22-27,31
+  s_f62532abd49a65::t_fd0c2df74b6496 16-21,28-30
+  s_f62532abd49a65::t_dd73e491cd7665 32
+docs/adr/0009-heterogeneous-error-model.md
+  s_f62532abd49a65::t_4c6f9dbd288b3f 1-30
+docs/adr/0005-application-owned-credentials-and-explicit-auth.md
+  s_f62532abd49a65::t_4c6f9dbd288b3f 1-26
+Documentation/Architecture.md
+  s_f62532abd49a65::t_7748d9a8e1c7f4 47-53,57-59,61-63,65-75,82-89,98-99,103-105
+  s_f62532abd49a65::t_fd0c2df74b6496 31-32,90-97,120-121
+  s_f62532abd49a65::t_381ebe1bbf3819 60
+  s_f62532abd49a65::t_71a4a21654bd12 1-30,33-46,54-56,64,76-81,100-102,106-119,122-130
+AGENTS.md
+  s_f62532abd49a65::t_71a4a21654bd12 5-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e0d92150da29ac3d709ad4528feb031d5e481aff",
+  "prompts": {},
+  "sessions": {
+    "s_f62532abd49a65": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a107da-78dc-7f81-a770-ffe844d47bae",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
