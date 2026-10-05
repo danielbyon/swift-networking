@@ -1,0 +1,44 @@
+Scripts/validate-documentation.sh
+  s_5241e532c18ca3::t_9fd88ed0c80895 15-24
+  s_5241e532c18ca3::t_5dc662371e3826 6-7,41,43-62
+  s_5241e532c18ca3::t_0680b82bda1480 65-68
+  s_5241e532c18ca3::t_bc05f7cce2ef95 3-5
+  s_5241e532c18ca3::t_59e1f2219fa6d5 8-10,12-14
+  s_5241e532c18ca3::t_5fb23fdfc786b8 25-27,38-40
+  s_5241e532c18ca3::t_ed3aabeb5182e4 42
+  s_5241e532c18ca3::t_b69d2d7e06f4d2 63-64
+  s_5241e532c18ca3::t_0cae03a1627979 69-71
+  s_5241e532c18ca3::t_ff36330e1c72a7 1-2,11,28-37,72-103
+Documentation/Conformance.md
+  s_5241e532c18ca3::t_ee426357c5ddc4 429,434-435,440
+  s_5241e532c18ca3::t_1672062abda5e4 39-50,387-393,404-405,407,409-425,430-433,448-449
+  s_5241e532c18ca3::t_4138f050a7578a 83-361,398-399,406,408,439,456
+  s_5241e532c18ca3::t_a3f449c850f01a 427-428,436
+  s_5241e532c18ca3::t_0350d739579da3 1-38,51-82,362-386,394-397,400-403,426,437-438,441-447,450-455,457-464
+.github/workflows/ci.yml
+  s_5241e532c18ca3::t_ab672c5c80a852 44-53
+Documentation/AgentGuide.md
+  s_5241e532c18ca3::t_845dacc16e30ee 48-49,57,72
+Documentation/Architecture.md
+  s_5241e532c18ca3::t_40f2be2e65e965 131-133
+Makefile
+  s_5241e532c18ca3::t_a6df5a538a0b87 6,17,34-36
+Sources/Networking/NetworkLogger.swift
+  s_5241e532c18ca3::t_a678b3decbbbd9 638,642-644
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b56a101ea80ceb9e0dfa6ed61a31d485617e0fed",
+  "prompts": {},
+  "sessions": {
+    "s_5241e532c18ca3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a10937-1309-7911-ae1a-1570438aa73a",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
