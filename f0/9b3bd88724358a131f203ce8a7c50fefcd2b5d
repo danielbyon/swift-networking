@@ -1,0 +1,23 @@
+Documentation/Conformance.md
+  s_5241e532c18ca3::t_c0d54fcdb3a1e6 307-311
+Scripts/validate-documentation.sh
+  s_5241e532c18ca3::t_c0d54fcdb3a1e6 67-73
+Documentation/AgentGuide.md
+  s_5241e532c18ca3::t_c0d54fcdb3a1e6 54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f09b3bd88724358a131f203ce8a7c50fefcd2b5d",
+  "prompts": {},
+  "sessions": {
+    "s_5241e532c18ca3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a10937-1309-7911-ae1a-1570438aa73a",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
