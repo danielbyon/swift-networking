@@ -51,7 +51,7 @@ check, and a separate compile for each declared Apple platform.
 | Purpose | Command | Behavior |
 | --- | --- | --- |
 | Apply formatting | `make format` | Runs the pinned SwiftFormat release with the shared baseline and repository overlay. |
-| Lint | `make lint` | Runs `git diff --check` and pinned SwiftLint. |
+| Lint | `make lint` | Runs `git diff --check`, pinned SwiftFormat in non-mutating lint mode, and pinned SwiftLint. |
 | Host build | `make build` | Runs `swift build`. |
 | Tests | `make test` | Runs `swift test`. |
 | Documentation check | `make docs-check` | Emits public symbol graphs and converts both DocC catalogs with warnings treated as errors. This is the CI documentation job. |

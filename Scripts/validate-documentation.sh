@@ -64,8 +64,13 @@ done
 printf '%s\n' "Building public symbol graphs."
 # The scratch path keeps build intermediates and emitted symbol graphs inside the
 # temporary directory, so the checkout is never an output location for this script.
-symbol_graph_output=$(swift package --scratch-path "$temporary_root/.scratch" \
-    dump-symbol-graph --minimum-access-level public 2>&1)
+# The exit status is captured explicitly: a bare assignment would end the script under `set -e`
+# and the captured Swift diagnostics would never reach the log.
+if ! symbol_graph_output=$(swift package --scratch-path "$temporary_root/.scratch" \
+    dump-symbol-graph --minimum-access-level public 2>&1); then
+    printf '%s\n' "$symbol_graph_output" >&2
+    fail "swift package dump-symbol-graph failed"
+fi
 symbol_graph_directory=$(printf '%s\n' "$symbol_graph_output" | sed -n 's/^Files written to //p' | tail -n 1)
 if [[ -z "$symbol_graph_directory" || ! -d "$symbol_graph_directory" ]]; then
     fail "could not locate the symbol graph output directory"

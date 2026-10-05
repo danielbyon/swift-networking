@@ -304,9 +304,11 @@ created only for repeated workflows that have actually been identified.
 
 ### 4.2 Local and CI tooling
 
-- `make lint` runs `git diff --check` and the pinned SwiftLint with the committed `.swiftlint.yml`
-  over `Sources` and `Tests`; `.githooks/pre-commit` invokes `make lint`, and the documented
-  installation step is `make hooks-install`.
+- `make lint` runs `git diff --check`, the pinned SwiftFormat in non-mutating lint mode with the
+  committed `.swiftformat` configuration (it reports the files that require formatting instead of
+  rewriting them), and the pinned SwiftLint with the committed `.swiftlint.yml` over `Sources`
+  and `Tests`; `.githooks/pre-commit` invokes `make lint`, and the documented installation step
+  is `make hooks-install`.
 - `make format` applies the pinned SwiftFormat with the committed `.swiftformat` configuration.
 - `make build` runs `swift build`; `make test` runs `swift test`; `make all` runs lint, build, and
   tests and is the CI quality job.
