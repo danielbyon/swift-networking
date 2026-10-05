@@ -230,7 +230,7 @@ follow-ups that the specification defers to after 1.0.
 | Spec | Requirement | Evidence | Status |
 | --- | --- | --- | --- |
 | 48 | Every public symbol has documentation comments; the DocC catalogs cover the 13 required guide topics; the README follows the required seven-section structure. | SwiftLint `missing_docs` rule enabled by the committed `.swiftlint.yml` baseline with zero violations; both DocC catalogs convert with warnings treated as errors; the 13 topics are distributed across `Sources/Networking/Networking.docc` (twelve guides) and `Sources/NetworkingTestSupport/NetworkingTestSupport.docc` (`TestSupport.md`); see section 3 below. | Conformant |
-| 49 | Agent support deliverables exist: root `AGENTS.md`, `Documentation/AgentGuide.md`, the normative specification, architecture documentation, ADRs, build/test/lint/format commands, an issue-driven workflow, and at least one validated end-to-end coding-agent run. | Repository files; `docs/agents/`; ADRs 0001-0009; `Makefile`; `.chatgpt/codex-runs/` run records for completed Issue 26, Issue 27, and this audit; see section 4 below. | Conformant |
+| 49 | Agent support deliverables exist: root `AGENTS.md`, `Documentation/AgentGuide.md`, the normative specification, architecture documentation, ADRs, build/test/lint/format commands, an issue-driven workflow, and at least one validated end-to-end coding-agent run. | Repository files; `docs/agents/`; ADRs 0001-0009; `Makefile`; the versioned end-to-end workflow record in `Documentation/AgentGuide.md` ("Recorded gpt-repo-local example") with GitHub issue 26, merged pull request 50, its green GitHub Actions runs, and the completed Codex review summary on that pull request; see section 4 below. | Conformant |
 | 50 | SwiftFormat and SwiftLint use committed configuration, run locally through the pre-commit hook and in CI as mandatory checks; CI validates the build under Swift 6 strict concurrency, unit tests, TestSupport tests, and compilation for all five declared platforms; releases use SwiftPM source, Git tags, and GitHub Releases with no binary pipeline; API-baseline tooling is explicitly a post-1.0 item. | `.swiftformat`, `.swiftlint.yml`, `Scripts/swift-tools.sh`, `.githooks/pre-commit`, `Makefile`, `.github/workflows/ci.yml`; see section 4 below. | Conformant, deferred (API baseline) |
 | 51 | All 19 release success criteria are met. | Section 5 below maps each criterion to evidence. | Conformant |
 | 52 | All 32 cross-cutting invariants hold. | Section 6 below maps each invariant to evidence. | Conformant |
@@ -297,7 +297,7 @@ explicitly described as a post-release example and does not claim that the relea
 | Decision records | `docs/adr/0001` through `docs/adr/0009` |
 | Issue tracker and triage guidance | `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`, `docs/agents/domain.md` |
 | Build, test, lint, and format commands | `Makefile`, `Scripts/swift-tools.sh`, `Documentation/AgentGuide.md` |
-| Validated end-to-end coding-agent runs | `.chatgpt/codex-runs/` records for Issues 26 and 27, plus this audit |
+| Validated end-to-end coding-agent run | `Documentation/AgentGuide.md`, "Recorded gpt-repo-local example": the Issue 26 documentation run, with GitHub issue 26, merged pull request 50, its green GitHub Actions runs, and the completed Codex review summary on that pull request |
 
 No repository-specific Skill is shipped, which matches the specification guidance that Skills are
 created only for repeated workflows that have actually been identified.
@@ -427,17 +427,23 @@ Swift 6.4.
 Final-state pass: the documentation check, repository validation, platform compiles, whitespace
 check, ship review, concurrency scan, and live GitHub posture queries below were re-run on this
 frozen tree at the end of the audit, with the repository validation executed last so that its
-recorded fingerprint covers the final content of every changed file; the validation identifier
-and artifact are recorded in the run result for this audit. The GitHub posture queries were
-refreshed on 2026-10-05 after the owner set both creation policies to collaborator-only, which
-closed the last open conformance item. The standalone `make format` measurement,
-the from-scratch warning build, and the TestSupport live-network scan are carried from the same
-session and were not repeated, because they cover files unchanged since those runs.
+recorded worktree fingerprint covers the final content of every changed file. These results are
+local execution evidence: they were produced on this working tree and are not versioned
+artifacts. This record's durable material is the versioned repository content: the committed
+documentation, tooling, and CI configuration, together with the GitHub record kept on pull
+request 52. The automated review and the required checks on that pull request and on the final
+reviewed `main` commit are a prospective release gate rather than completed evidence here, so
+the `1.0.0` tag must not be created until every required check is green. The GitHub posture queries
+were refreshed on 2026-10-05 after the owner set both creation policies to collaborator-only,
+which closed the last open conformance item. The standalone `make format` measurement,
+the from-scratch warning build, and the TestSupport live-network scan are
+carried from the same session and were not repeated, because they cover files unchanged since
+those runs.
 
 | Check | Command | Result |
 | --- | --- | --- |
 | Documentation catalogs | `make docs-check` | Passed. Public symbol graphs were emitted for both library targets, both DocC catalogs converted with warnings treated as errors, and all 13 required guide topics plus both catalog landing pages were present. |
-| Repository validation | Repository validation profile `all`, which runs `make all` | Passed: lint, build, and all tests succeeded (419 tests: 332 in `Tests/NetworkingTests` and 87 in `Tests/NetworkingTestSupportTests`). The validation identifier and artifact are recorded in the run result for this audit. |
+| Repository validation | Repository validation profile `all`, which runs `make all` | Passed: lint, build, and all tests succeeded (419 tests: 332 in `Tests/NetworkingTests` and 87 in `Tests/NetworkingTestSupportTests`). Local execution evidence on the final working tree, not a versioned artifact; see the note above. |
 | Formatting | `make format` | SwiftFormat reformatted 0 of 84 files and skipped 15; no formatting change was needed. |
 | Lint | `make lint` | `git diff --check` clean; SwiftLint reported 52 non-serious, pre-existing style warnings and 0 serious violations. |
 | Platform compiles | `make platform-build PLATFORM=...` for iOS, macOS, tvOS, watchOS, and visionOS | All five reported `BUILD SUCCEEDED`, including visionOS without the SnapshotTesting integration. |
