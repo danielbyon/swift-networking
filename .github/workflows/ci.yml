@@ -41,3 +41,13 @@ jobs:
 
       - name: Compile package for ${{ matrix.platform }}
         run: make platform-build PLATFORM="${{ matrix.platform }}" DERIVED_DATA_PATH="$RUNNER_TEMP/swift-networking-${{ matrix.platform }}"
+
+  documentation:
+    name: Documentation
+    runs-on: xcode-27
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate DocC catalogs
+        run: make docs-check
