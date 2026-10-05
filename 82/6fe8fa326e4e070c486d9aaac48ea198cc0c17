@@ -1,0 +1,22 @@
+Documentation/Conformance.md
+  s_5241e532c18ca3::t_1099e87775214e 233,300,430-431,437,440-441,446
+  s_5241e532c18ca3::t_4a11b8a30ed571 432-433
+  s_5241e532c18ca3::t_0f8b87d8aecfb3 438-439
+  s_5241e532c18ca3::t_83880c303102f7 434-436
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "826fe8fa326e4e070c486d9aaac48ea198cc0c17",
+  "prompts": {},
+  "sessions": {
+    "s_5241e532c18ca3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a10937-1309-7911-ae1a-1570438aa73a",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
