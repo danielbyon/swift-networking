@@ -386,8 +386,9 @@ created only for repeated workflows that have actually been identified.
 | 32. Future features are not predesigned into 1.0 APIs beyond reasonable extension seams. | Public symbol inventory; ADR 0004; `README.md` capabilities statement. | Conformant |
 ## 7. Release readiness checklist
 
-Each item records a release prerequisite and the evidence that verifies it. All items below are
-verified; none remain open.
+Each item records a release readiness prerequisite and the evidence that verifies it. Every item
+below is verified and no conformance item remains open. Readiness is not the release itself: the
+`1.0.0` tag and the GitHub Release remain deferred maintainer actions (R6 and section 7.1).
 
 | Item | Requirement | Verification | Status |
 | --- | --- | --- | --- |
@@ -396,22 +397,32 @@ verified; none remain open.
 | R3 | SwiftPM source distribution with exactly the intended products and platform declarations | `Package.swift` declares the two library products `Networking` and `NetworkingTestSupport` and the five platform minimums; no binary or XCFramework pipeline exists. | Verified |
 | R4 | README installation and support language | `README.md` documents installation as an explicitly post-release example, states the platform and support policy, and ends with the public-reference notice. | Verified |
 | R5 | Agent support deliverables | Section 4 above. | Verified |
-| R6 | Tag and release prerequisites | No `1.0.0` tag and no GitHub Release exist locally or on the remote. The steps below are documented but deliberately not executed. | Verified |
-| R7 | Release-candidate repository state | The working tree contains only the authorized Issue 28 changes: this document, the documentation validation tooling, the CI documentation job, documentation pointers, and the evidenced `NetworkLogger` warning fix. A clean committed release HEAD is a maintainer step after review, commit, and merge, and every required GitHub CI job must pass on that final `main` commit before tagging; see "Remaining release actions". | Verified in the final audit record |
+| R6 | Tag and release prerequisites | The release steps are documented and no premature artifact exists: no `1.0.0` tag and no GitHub Release on the remote or locally. Creating them is the maintainer action in section 7.1. | Prerequisites verified; release deliberately not created |
+| R7 | Release-candidate repository state | The audited tree contained only the authorized Issue 28 changes: this document, the documentation validation tooling, the CI documentation job, documentation pointers, and the evidenced `NetworkLogger` warning fix. The reviewed change set then merged into `main`; the merge, its CI, and the final-state confirmation are recorded in section 7.1. | Verified for the audited tree; post-merge state recorded in section 7.1 |
 | R8 | Validation evidence | Documentation gate, repository validation (`make all`), all five platform compilations, whitespace and diff check, and ship review recorded in the final audit record below. The ship review's automated semantic pass covers tracked changes only; the two untracked Issue 28 files are covered by direct review and by the documentation gate. | Verified in the final audit record |
 | R9 | Post-1.0 follow-ups recorded | Section 8 below. | Verified |
 
 ### 7.1 Remaining release actions
 
-1. Review, commit, and merge the Issue 28 changes so that `main` is the audited release candidate.
-2. Wait for every required GitHub CI job on that final reviewed `main` commit to pass; the tag
-   must not be created while any required job is failing or still running.
-3. Confirm the final state on `main` after CI is green: `git status` clean, `HEAD` equal to the
-   reviewed commit, and no uncommitted residue.
-4. Tag and release after the CI pass and the final state confirmation:
+Steps 1 through 4 are complete; the tag and release in step 5 remain. Completion dates below are
+UTC, so the merge and closure fall on 2026-10-05 in the maintainer's local time.
+
+1. Review, commit, and merge — completed: pull request 52
+   (https://github.com/danielbyon/swift-networking/pull/52) merged as `90d1251` at
+   2026-10-06T00:22Z, so `main` is the audited release candidate.
+2. Required CI on the final `main` commit — completed: the post-merge run on `90d1251` passed
+   every required job, covering the five platform builds, the documentation job, and the quality
+   gate, as recorded at https://github.com/danielbyon/swift-networking/actions/runs/37393648012.
+   Tagging is gated on this step.
+3. Final state confirmation — completed: `main` is clean at `90d1251`, with `HEAD` equal to the
+   reviewed commit and no uncommitted residue.
+4. Close tracking issue 28 — completed on 2026-10-06 UTC
+   (https://github.com/danielbyon/swift-networking/issues/28), after the merge and the required
+   `main` CI jobs passed.
+5. Tag and release — remaining maintainer action:
    `git tag -a 1.0.0 -m "Networking 1.0.0"`, `git push origin 1.0.0`, then
    `gh release create 1.0.0 --title "Networking 1.0.0" --generate-notes`.
-5. Close tracking issue 28 once the tag and release exist.
+   The CI gate in step 2 has passed, and no `1.0.0` tag and no GitHub Release exist yet.
 
 ## 8. Post-1.0 follow-ups
 
@@ -419,12 +430,16 @@ verified; none remain open.
 | --- | --- | --- | --- |
 | F1 | Add public API compatibility or baseline tooling to CI so unintended SemVer-breaking changes are detected. | Specification section 50 | The specification states this should exist after 1.0 and that API evolution remains intentionally flexible before 1.0. Adding baseline machinery now would lock the surface before the release that defines it. |
 | F2 | Remove the visionOS SnapshotTesting exclusion once the released upstream `swift-snapshot-testing` dependency supports visionOS. | Specification section 43 | The restriction exists because of the upstream dependency, not this library. `Networking` and every `NetworkingTestSupport` feature that does not depend on SnapshotTesting already support visionOS. |
-| F3 | Close tracking issue 28 and, if desired, open a follow-up issue for F1. | Repository workflow | Issue closure belongs to the maintainer release step; this audit does not mutate GitHub state. |
+| F3 | Close tracking issue 28 and, if desired, open a follow-up issue for F1. | Repository workflow | Completed on 2026-10-06 UTC after the audit merged and the required `main` CI jobs passed; the audit run itself did not mutate GitHub state. |
 ## 9. Audit verification record
 
-Recorded on 2026-10-04 and refreshed on 2026-10-05 from the final working tree based on commit
-`908a8c3`, before any review, commit, or merge. Toolchain: Xcode 27.0 (27A266a) with
+Recorded on 2026-10-04 and refreshed on 2026-10-05 from the final reviewed working tree based on
+commit `908a8c3`, before any review, commit, or merge. Toolchain: Xcode 27.0 (27A266a) with
 Swift 6.4.
+
+The local checks in this section therefore describe that reviewed pre-merge tree, not the merged
+commit. The merged `main` commit `90d1251` is verified by the GitHub CI run recorded in section 7.1
+rather than by these local runs.
 
 Final-state pass: the documentation check, repository validation, platform compiles, whitespace
 check, ship review, concurrency scan, and live GitHub posture queries below were re-run on this
@@ -433,9 +448,10 @@ recorded worktree fingerprint covers the final content of every changed file. Th
 local execution evidence: they were produced on this working tree and are not versioned
 artifacts. This record's durable material is the versioned repository content: the committed
 documentation, tooling, and CI configuration, together with the GitHub record kept on pull
-request 52. The automated review and the required checks on that pull request and on the final
-reviewed `main` commit are a prospective release gate rather than completed evidence here, so
-the `1.0.0` tag must not be created until every required check is green. The GitHub posture queries
+request 52: the automated review and every required check on that pull request completed, and the
+post-merge run on the final reviewed `main` commit (`90d1251`) passed every required job, so the
+release prerequisites for tagging are met. Creating the `1.0.0` tag and the GitHub Release remains
+the outstanding maintainer action. The GitHub posture queries
 were refreshed on 2026-10-05 after the owner set both creation policies to collaborator-only,
 which closed the last open conformance item. The standalone `make format` measurement,
 the from-scratch warning build, and the TestSupport live-network scan are
