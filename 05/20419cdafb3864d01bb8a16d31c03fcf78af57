@@ -1,0 +1,20 @@
+.github/workflows/ci.yml
+  s_c37c1645f02395::t_b77776de4cc447 19,24-37
+  s_c37c1645f02395::t_ae65c6b0f24f94 23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0520419cdafb3864d01bb8a16d31c03fcf78af57",
+  "prompts": {},
+  "sessions": {
+    "s_c37c1645f02395": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a10f13-eac3-79b0-b936-760f4adbd744",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Daniel Byon <daniel@danielbyon.com>"
+    }
+  }
+}
