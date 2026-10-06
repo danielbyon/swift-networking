@@ -16,9 +16,25 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Show toolchain
+        id: toolchain
         run: |
           xcodebuild -version
           swift --version
+          toolchain_id=$( { xcodebuild -version; swift --version | sed -n '1p'; } | shasum -a 256 | cut -c 1-16 )
+          echo "Toolchain cache id: $toolchain_id"
+          echo "id=$toolchain_id" >> "$GITHUB_OUTPUT"
+
+      # Mint stores bootstrapped tools under the repository MINT_PATH set by
+      # Scripts/swift-tools.sh (.tools/mint). The key pins runner OS/arch, the
+      # effective Xcode/Swift toolchain, and Scripts/swift-tools.lock, which
+      # fixes the swift-tooling release and therefore its Mintfile, Mint, and
+      # tool versions. Deliberately no restore-keys: compiled tools must never
+      # be restored across an incompatible toolchain.
+      - name: Cache Mint tools
+        uses: actions/cache@v4
+        with:
+          path: .tools/mint
+          key: mint-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-${{ hashFiles('Scripts/swift-tools.lock') }}
 
       - name: Run package quality gate
         run: make all
