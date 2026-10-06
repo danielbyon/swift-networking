@@ -45,15 +45,16 @@ identify the conflict and follow the task's authority and scope rules before cha
 
 ## Verified repository commands
 
-The Makefile defines the local commands. CI runs the aggregate quality gate and a separate compile
-for each declared Apple platform.
+The Makefile defines the local commands. CI runs the aggregate quality gate, a documentation
+check, and a separate compile for each declared Apple platform.
 
 | Purpose | Command | Behavior |
 | --- | --- | --- |
 | Apply formatting | `make format` | Runs the pinned SwiftFormat release with the shared baseline and repository overlay. |
-| Lint | `make lint` | Runs `git diff --check` and pinned SwiftLint. |
+| Lint | `make lint` | Runs `git diff --check`, pinned SwiftFormat in non-mutating lint mode, and pinned SwiftLint. |
 | Host build | `make build` | Runs `swift build`. |
 | Tests | `make test` | Runs `swift test`. |
+| Documentation check | `make docs-check` | Emits public symbol graphs and converts both DocC catalogs with warnings treated as errors. This is the CI documentation job. |
 | Aggregate quality gate | `make all` | Runs lint, build, and tests. This is the CI quality job. |
 | Apple platform compile | `make platform-build PLATFORM=macOS` | Runs the package scheme with a generic platform destination. Replace `macOS` with `iOS`, `tvOS`, `watchOS`, or `visionOS` as needed. |
 | Install local pre-commit hook | `make hooks-install` | Sets this checkout's `core.hooksPath` to `.githooks`. The tracked hook runs `make lint`. |
@@ -68,6 +69,7 @@ ignored is expected with that explicit config argument.
 ## Documentation synchronization
 
 - Keep `CONTEXT.md` concise and use its established domain terms.
+- Keep [`Documentation/Conformance.md`](Conformance.md) current when a specification section, a release checklist item, or a post-1.0 follow-up changes; it is the durable conformance and release-readiness record for the 1.0 release.
 - Put architecture navigation in `Documentation/Architecture.md`, detailed agent workflow here, and
   durable decision rationale in `docs/adr/`.
 - Treat `docs/spec/networking-1.0.md` as the normative behavior contract. Link to its sections instead

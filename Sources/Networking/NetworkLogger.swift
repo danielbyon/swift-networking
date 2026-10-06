@@ -635,13 +635,13 @@ package enum NetworkPrivacySanitizer {
     static func errorIdentity(_ error: any Error) -> String {
         let type = NetworkDiagnosticTypeName.stableName(for: Swift.type(of: error))
         if Swift.type(of: error) is NSError.Type {
-            guard Swift.type(of: error) == NSError.self,
-                  let foundationError = error as? NSError
-            else {
+            guard Swift.type(of: error) == NSError.self else {
                 return escape(type)
             }
 
-            // Only the Foundation NSError implementation has inert code metadata for this diagnostic.
+            // The exact-type check above proves that the value bridges to NSError. Foundation
+            // NSError is the only implementation with inert code metadata for this diagnostic.
+            let foundationError = error as NSError
             return "\(escape(type))(domain=<redacted>,code=\(foundationError.code))"
         }
 

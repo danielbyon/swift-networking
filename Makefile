@@ -3,7 +3,7 @@ SHELL := /bin/bash
 PACKAGE_SCHEME := swift-networking-Package
 DERIVED_DATA_PATH ?= .build/xcode/$(PLATFORM)
 
-.PHONY: all help tools format lint build test platform-build hooks-install
+.PHONY: all help tools format lint build test docs-check platform-build hooks-install
 
 all: lint build test
 
@@ -14,6 +14,7 @@ help:
 		'make lint             Verify formatting and run SwiftLint.' \
 		'make build            Build the package for the host platform.' \
 		'make test             Run all package tests.' \
+		'make docs-check       Validate both shipped DocC catalogs.' \
 		'make platform-build   Build for a generic Apple platform destination.' \
 		'make hooks-install    Install the tracked pre-commit hook for this checkout.'
 
@@ -29,6 +30,9 @@ lint: tools
 
 build:
 	swift build
+
+docs-check:
+	bash Scripts/validate-documentation.sh
 
 test:
 	swift test

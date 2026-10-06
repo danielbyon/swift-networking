@@ -128,3 +128,6 @@ injection. See spec §§41–45 and [ADR 0004](../docs/adr/0004-client-owned-ses
 - [ADR 0009 — Heterogeneous error model](../docs/adr/0009-heterogeneous-error-model.md)
 
 Deferred capabilities remain outside this 1.0 map. See spec §47 for the supported boundary.
+
+[`Documentation/Conformance.md`](Conformance.md) records the section-by-section conformance evidence
+and the release checklist for the 1.0 tag.
